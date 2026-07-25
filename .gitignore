@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 scan_stdout.txt
 scan_stderr.txt
+samples/
+validate_report.json

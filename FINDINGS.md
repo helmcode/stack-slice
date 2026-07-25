@@ -168,6 +168,117 @@ would gut a training corpus.
    plainly in any dataset card we release, alongside a `permissive` config for
    users who need a clean subset.
 
+## 7. Phase 0.5: what the content says
+
+Run with `python -m stackslice.validate --shards 3`. Unlike the metadata scan
+this pass cannot be cheap: parquet stores one column chunk per row group, so
+asking for `content` at all pulls every repository in that row group. Cost was
+**1.45 GB and 2m24s** for 3 full shards (63,185 repos, 948,362 files, 13,137
+YAML files inspected).
+
+### 7.1 What YAML on GitHub actually is
+
+| Content label | Share of YAML |
+|---|---|
+| other (config, locales, data, fixtures) | 59.58% |
+| github_actions | 11.02% |
+| compose | 10.92% |
+| k8s_manifest | 9.10% |
+| ansible | 5.05% |
+| helm_values | 1.24% |
+| helm_template | 1.21% |
+| gitlab_ci | 0.91% |
+| openapi | 0.56% |
+| cloudformation | 0.30% |
+| prometheus_rules | 0.09% |
+
+So **40.4% of all YAML in the corpus is infrastructure**, spread across 35.9M
+YAML files corpus-wide.
+
+### 7.2 Corrected volumes
+
+| | Files | Size |
+|---|---|---|
+| Real Kubernetes manifests (`apiVersion` + `kind`, no templating) | 3,267,472 | 2.81 GB |
+| Helm templates (templated manifests) | 434,388 | 0.59 GB |
+
+The path heuristic's file count for `kubernetes` (3.25M) happened to land close
+to the true 3.27M, but that is a coincidence of two errors cancelling: its
+composition was wrong in both directions.
+
+### 7.3 The path rules are a prior, not a label
+
+**Recall** (of files whose content proves what they are, how many did the path
+rules catch?):
+
+| Content label | Caught by the matching rule | Unclassified by any rule |
+|---|---|---|
+| github_actions | **97.10%** | 2.90% |
+| compose | 77.89% | 17.43% |
+| k8s_manifest | **33.11%** | 60.95% |
+| ansible | 28.46% | 70.48% |
+
+**Precision** (of files a path rule claimed, what are they really?):
+
+| Path rule | Correct | Notable confusion |
+|---|---|---|
+| `kubernetes` | 56.81% | 17.22% are Helm templates, 23.53% unrelated |
+| `ansible` | 35.80% | 64.20% labelled `other` |
+| terraform (`.tf` content check) | **98.87%** (1308/1323) | |
+| dockerfile (content check) | **99.73%** (1827/1832) | |
+
+Three conclusions:
+
+1. **For YAML, content must be the primary classifier.** Path rules miss two
+   thirds of real Kubernetes manifests because manifests live anywhere, and they
+   over-claim by 43%. Path rules remain useful as a cheap prior and as a router,
+   never as the final label.
+2. **Extension-anchored classes need no content pass.** Terraform and Dockerfile
+   path rules are 99% correct, so the exact-precision classes can be trusted as
+   labelled.
+3. **`.github/workflows` is the one canonical path in the whole ecosystem**, at
+   97% recall. Everything else is convention at best.
+
+Two caveats on the numbers above, both in the direction of understating quality:
+
+- The `ansible` precision figure is not trustworthy. Its rules deliberately
+  include `group_vars/` and `host_vars/`, whose contents are plain variable trees
+  with nothing that distinguishes them from any other YAML, so they land in
+  `other` while genuinely being Ansible.
+- The `helm` path class has no comparable YAML content label at all: it matches
+  `Chart.yaml` and `_helpers.tpl`, which are chart metadata and template
+  helpers, correctly not manifests.
+
+### 7.4 A concrete taxonomy fix
+
+17.22% of `kubernetes` path hits are Helm templates, caught by the
+`(^|/)templates/[^/]+\.ya?ml` rule. The fix needs repository context, which
+`detect_units` already computes: a `templates/` directory whose parent holds a
+`Chart.yaml` is a chart, so its YAML belongs to `helm`, not `kubernetes`.
+
+### 7.5 Licensing holds up
+
+Of 1,196 real Kubernetes manifests, 68 are `permissive` (**5.69%**), consistent
+with the 6.55% measured across the IaC slice by metadata alone. Machine-generated
+files are negligible: 13 of 13,137 YAML files carry a generation marker.
+
+### 7.6 Unit extraction works, and star-gating is expensive
+
+Extracting complete units to disk produced coherent, self-contained charts
+(`Chart.yaml` + `values.yaml` + templates, intact and consistent). One extracted
+sample even ships a `policy/v1beta1` PodDisruptionBudget, a long-removed API
+version, which is itself a good benchmark task.
+
+The cost of star-gating is the planning number to keep: charts in repositories
+with 10 or more stars occur at roughly 3.2e-5 per repository, so collecting
+~2,000 of them means reading around 36% of the corpus, about **1.7 TB** of
+content transfer.
+
+The cheaper route is to gate on content quality rather than popularity: template
+count, presence of `values.yaml`, parseable `Chart.yaml`, renderable templates.
+Scanning ~5% of the corpus (~230 GB) yields roughly 4,500 charts to filter down
+from, which is ample for a benchmark suite.
+
 ## Reproducing
 
 ```bash
@@ -176,5 +287,6 @@ uv pip install --python .venv/bin/python pyarrow huggingface_hub fsspec pytest
 .venv/bin/python -m pytest tests/ -q
 .venv/bin/python probe_footer.py 0              # column sizes of one shard
 .venv/bin/python probe_licenses.py 0 4098 8195  # license_type distribution
-.venv/bin/python -m stackslice.scan --shards 24 # the full report
+.venv/bin/python -m stackslice.scan --shards 24 # the metadata report
+.venv/bin/python -m stackslice.validate --shards 3 # the content validation
 ```
