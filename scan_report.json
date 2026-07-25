@@ -1,0 +1,492 @@
+{
+  "sample": {
+    "shards_scanned": 24,
+    "shards_total": 8196,
+    "coverage_pct": 0.293,
+    "bytes_fetched_mb": 179.3,
+    "repos": 505997,
+    "files": 8585754,
+    "file_bytes_gb": 52.22
+  },
+  "extrapolated": {
+    "repos": 172797975,
+    "files": 2932034991,
+    "corpus_tb": 17.83,
+    "iac_core_files": 37165786,
+    "iac_core_gb": 58.2,
+    "iac_core_share_pct": 0.326,
+    "full_metadata_index_gb": 61.2
+  },
+  "tools": {
+    "shell": {
+      "files": 50481,
+      "files_extrapolated": 17239261,
+      "gb_extrapolated": 35.66,
+      "repos_pct": 2.65,
+      "adjacent": true
+    },
+    "nix": {
+      "files": 30534,
+      "files_extrapolated": 10427361,
+      "gb_extrapolated": 25.4,
+      "repos_pct": 0.07,
+      "adjacent": false
+    },
+    "makefile": {
+      "files": 20684,
+      "files_extrapolated": 7063586,
+      "gb_extrapolated": 36.17,
+      "repos_pct": 1.42,
+      "adjacent": true
+    },
+    "dockerfile": {
+      "files": 15001,
+      "files_extrapolated": 5122841,
+      "gb_extrapolated": 3.02,
+      "repos_pct": 1.9,
+      "adjacent": false
+    },
+    "github_actions": {
+      "files": 12117,
+      "files_extrapolated": 4137955,
+      "gb_extrapolated": 6.38,
+      "repos_pct": 1.33,
+      "adjacent": false
+    },
+    "terraform": {
+      "files": 11458,
+      "files_extrapolated": 3912907,
+      "gb_extrapolated": 5.19,
+      "repos_pct": 0.28,
+      "adjacent": false
+    },
+    "kubernetes": {
+      "files": 9520,
+      "files_extrapolated": 3251080,
+      "gb_extrapolated": 4.69,
+      "repos_pct": 0.18,
+      "adjacent": false
+    },
+    "compose": {
+      "files": 9419,
+      "files_extrapolated": 3216588,
+      "gb_extrapolated": 2.98,
+      "repos_pct": 1.35,
+      "adjacent": false
+    },
+    "ansible": {
+      "files": 5088,
+      "files_extrapolated": 1737552,
+      "gb_extrapolated": 1.98,
+      "repos_pct": 0.12,
+      "adjacent": false
+    },
+    "bazel": {
+      "files": 2968,
+      "files_extrapolated": 1013572,
+      "gb_extrapolated": 1.64,
+      "repos_pct": 0.03,
+      "adjacent": false
+    },
+    "travis": {
+      "files": 2459,
+      "files_extrapolated": 839748,
+      "gb_extrapolated": 0.43,
+      "repos_pct": 0.32,
+      "adjacent": false
+    },
+    "helm": {
+      "files": 2211,
+      "files_extrapolated": 755056,
+      "gb_extrapolated": 0.89,
+      "repos_pct": 0.07,
+      "adjacent": false
+    },
+    "puppet": {
+      "files": 1012,
+      "files_extrapolated": 345598,
+      "gb_extrapolated": 0.42,
+      "repos_pct": 0.03,
+      "adjacent": false
+    },
+    "jenkins": {
+      "files": 976,
+      "files_extrapolated": 333304,
+      "gb_extrapolated": 0.83,
+      "repos_pct": 0.16,
+      "adjacent": false
+    },
+    "nginx": {
+      "files": 787,
+      "files_extrapolated": 268760,
+      "gb_extrapolated": 0.33,
+      "repos_pct": 0.12,
+      "adjacent": false
+    },
+    "prometheus": {
+      "files": 745,
+      "files_extrapolated": 254417,
+      "gb_extrapolated": 0.32,
+      "repos_pct": 0.05,
+      "adjacent": false
+    },
+    "kustomize": {
+      "files": 694,
+      "files_extrapolated": 237001,
+      "gb_extrapolated": 0.08,
+      "repos_pct": 0.04,
+      "adjacent": false
+    },
+    "chef": {
+      "files": 465,
+      "files_extrapolated": 158797,
+      "gb_extrapolated": 0.13,
+      "repos_pct": 0.02,
+      "adjacent": false
+    },
+    "gitlab_ci": {
+      "files": 438,
+      "files_extrapolated": 149577,
+      "gb_extrapolated": 0.19,
+      "repos_pct": 0.06,
+      "adjacent": false
+    },
+    "circleci": {
+      "files": 383,
+      "files_extrapolated": 130794,
+      "gb_extrapolated": 0.26,
+      "repos_pct": 0.06,
+      "adjacent": false
+    },
+    "rego": {
+      "files": 353,
+      "files_extrapolated": 120549,
+      "gb_extrapolated": 1.72,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "vagrant": {
+      "files": 349,
+      "files_extrapolated": 119183,
+      "gb_extrapolated": 0.2,
+      "repos_pct": 0.05,
+      "adjacent": false
+    },
+    "salt": {
+      "files": 343,
+      "files_extrapolated": 117134,
+      "gb_extrapolated": 0.1,
+      "repos_pct": 0.01,
+      "adjacent": false
+    },
+    "serverless": {
+      "files": 284,
+      "files_extrapolated": 96986,
+      "gb_extrapolated": 0.21,
+      "repos_pct": 0.04,
+      "adjacent": false
+    },
+    "azure_pipelines": {
+      "files": 226,
+      "files_extrapolated": 77179,
+      "gb_extrapolated": 0.13,
+      "repos_pct": 0.03,
+      "adjacent": false
+    },
+    "sam": {
+      "files": 191,
+      "files_extrapolated": 65226,
+      "gb_extrapolated": 0.14,
+      "repos_pct": 0.02,
+      "adjacent": false
+    },
+    "skaffold": {
+      "files": 112,
+      "files_extrapolated": 38248,
+      "gb_extrapolated": 0.03,
+      "repos_pct": 0.02,
+      "adjacent": false
+    },
+    "justfile": {
+      "files": 104,
+      "files_extrapolated": 35516,
+      "gb_extrapolated": 0.03,
+      "repos_pct": 0.02,
+      "adjacent": true
+    },
+    "terragrunt": {
+      "files": 102,
+      "files_extrapolated": 34833,
+      "gb_extrapolated": 0.04,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "grafana": {
+      "files": 83,
+      "files_extrapolated": 28344,
+      "gb_extrapolated": 0.12,
+      "repos_pct": 0.01,
+      "adjacent": false
+    },
+    "cloudformation": {
+      "files": 76,
+      "files_extrapolated": 25954,
+      "gb_extrapolated": 0.09,
+      "repos_pct": 0.01,
+      "adjacent": false
+    },
+    "drone": {
+      "files": 58,
+      "files_extrapolated": 19807,
+      "gb_extrapolated": 0.02,
+      "repos_pct": 0.01,
+      "adjacent": false
+    },
+    "pulumi": {
+      "files": 56,
+      "files_extrapolated": 19124,
+      "gb_extrapolated": 0.01,
+      "repos_pct": 0.01,
+      "adjacent": false
+    },
+    "packer": {
+      "files": 54,
+      "files_extrapolated": 18441,
+      "gb_extrapolated": 0.03,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "otel": {
+      "files": 49,
+      "files_extrapolated": 16733,
+      "gb_extrapolated": 0.02,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "traefik": {
+      "files": 44,
+      "files_extrapolated": 15026,
+      "gb_extrapolated": 0.02,
+      "repos_pct": 0.01,
+      "adjacent": false
+    },
+    "haproxy": {
+      "files": 38,
+      "files_extrapolated": 12977,
+      "gb_extrapolated": 0.01,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "cloud_init": {
+      "files": 33,
+      "files_extrapolated": 11269,
+      "gb_extrapolated": 0.01,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "jsonnet": {
+      "files": 32,
+      "files_extrapolated": 10928,
+      "gb_extrapolated": 0.02,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "envoy": {
+      "files": 30,
+      "files_extrapolated": 10245,
+      "gb_extrapolated": 0.04,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "buildkite": {
+      "files": 14,
+      "files_extrapolated": 4781,
+      "gb_extrapolated": 0.01,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "helmfile": {
+      "files": 10,
+      "files_extrapolated": 3415,
+      "gb_extrapolated": 0.0,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "systemd": {
+      "files": 8,
+      "files_extrapolated": 2732,
+      "gb_extrapolated": 0.0,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "cue": {
+      "files": 8,
+      "files_extrapolated": 2732,
+      "gb_extrapolated": 0.01,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "tekton": {
+      "files": 3,
+      "files_extrapolated": 1024,
+      "gb_extrapolated": 0.0,
+      "repos_pct": 0.0,
+      "adjacent": false
+    },
+    "earthly": {
+      "files": 2,
+      "files_extrapolated": 683,
+      "gb_extrapolated": 0.0,
+      "repos_pct": 0.0,
+      "adjacent": true
+    }
+  },
+  "precision": {
+    "shell/exact": 50481,
+    "nix/exact": 30534,
+    "makefile/exact": 20684,
+    "dockerfile/exact": 15001,
+    "github_actions/exact": 12117,
+    "terraform/exact": 11458,
+    "kubernetes/heuristic": 9520,
+    "compose/exact": 9419,
+    "ansible/structural": 4371,
+    "bazel/exact": 2968,
+    "travis/exact": 2459,
+    "helm/exact": 1124,
+    "helm/structural": 1087,
+    "puppet/exact": 1012,
+    "jenkins/exact": 976,
+    "nginx/exact": 768,
+    "ansible/heuristic": 717,
+    "kustomize/exact": 694,
+    "prometheus/exact": 488,
+    "gitlab_ci/exact": 427,
+    "circleci/exact": 383,
+    "chef/structural": 357,
+    "rego/exact": 353,
+    "vagrant/exact": 349,
+    "salt/exact": 343,
+    "serverless/exact": 284,
+    "prometheus/heuristic": 257,
+    "azure_pipelines/exact": 226,
+    "sam/heuristic": 191,
+    "skaffold/exact": 112,
+    "chef/exact": 108,
+    "justfile/exact": 104,
+    "terragrunt/exact": 102,
+    "grafana/heuristic": 83,
+    "cloudformation/heuristic": 76,
+    "drone/exact": 58,
+    "pulumi/exact": 56,
+    "packer/exact": 54,
+    "otel/exact": 49,
+    "traefik/exact": 44,
+    "haproxy/exact": 38,
+    "cloud_init/heuristic": 33,
+    "jsonnet/exact": 32,
+    "envoy/exact": 30,
+    "nginx/heuristic": 19,
+    "buildkite/exact": 14,
+    "gitlab_ci/structural": 11,
+    "helmfile/exact": 10,
+    "systemd/exact": 8,
+    "cue/exact": 8,
+    "tekton/structural": 3,
+    "earthly/exact": 2
+  },
+  "units": {
+    "compose_project": {
+      "count": 7891,
+      "count_extrapolated": 2694776,
+      "repos": 6858,
+      "repos_extrapolated": 2342007
+    },
+    "terraform_dir": {
+      "count": 3585,
+      "count_extrapolated": 1224277,
+      "repos": 1420,
+      "repos_extrapolated": 484930
+    },
+    "terraform_module": {
+      "count": 2491,
+      "count_extrapolated": 850676,
+      "repos": 1027,
+      "repos_extrapolated": 350720
+    },
+    "ansible_role": {
+      "count": 1340,
+      "count_extrapolated": 457610,
+      "repos": 303,
+      "repos_extrapolated": 103474
+    },
+    "kustomize_dir": {
+      "count": 594,
+      "count_extrapolated": 202851,
+      "repos": 208,
+      "repos_extrapolated": 71032
+    },
+    "helm_chart": {
+      "count": 264,
+      "count_extrapolated": 90156,
+      "repos": 162,
+      "repos_extrapolated": 55323
+    },
+    "helm_chart_with_values": {
+      "count": 187,
+      "count_extrapolated": 63860,
+      "repos": 132,
+      "repos_extrapolated": 45078
+    },
+    "helm_umbrella": {
+      "count": 172,
+      "count_extrapolated": 58738,
+      "repos": 85,
+      "repos_extrapolated": 29027
+    }
+  },
+  "licenses": {
+    "no_license": 168297,
+    "permissive": 11805
+  },
+  "stars_of_iac_repos": {
+    "0": 17468,
+    "1-10": 4625,
+    "10-100": 1038,
+    "100-1k": 307,
+    "1k-10k": 65,
+    "10k+": 12
+  },
+  "top_languages": {
+    "Java": 1189429,
+    "JSON": 825559,
+    "Markdown": 735610,
+    "JavaScript": 673563,
+    "Python": 536331,
+    "C++": 401055,
+    "PHP": 387591,
+    "TypeScript": 381888,
+    "C#": 370216,
+    "C": 281631,
+    "CSS": 255791,
+    "TSX": 225120,
+    "TOML": 157475,
+    "YAML": 146475,
+    "HTML": 101331,
+    "Kotlin": 96486,
+    "Ruby": 94441,
+    "SCSS": 91637,
+    "Go": 90411,
+    "Dart": 87655,
+    "XML": 82177,
+    "Jupyter Notebook": 76152,
+    "Gettext Catalog": 73149,
+    "Vue": 68864,
+    "Shell": 66530,
+    "Swift": 54265,
+    "Blade": 52332,
+    "Ignore List": 46949,
+    "SQL": 43506,
+    "Objective-C": 37127
+  }
+}

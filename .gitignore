@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+*.pyc
+scan_stdout.txt
+scan_stderr.txt
