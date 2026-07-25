@@ -22,6 +22,7 @@ import os
 import sys
 import time
 from collections import Counter, defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 import pyarrow.compute as pc
@@ -228,9 +229,17 @@ def _unit_candidates(paths: list[str], resolved) -> dict[str, dict[str, list[int
     return candidates
 
 
-def extract_shard(index: int, writers: dict, stats: Counter, rejections: Rejections,
-                  row_group_limit: int | None = None) -> int:
-    """Extract every passing unit from one shard. Returns bytes pulled."""
+def collect_shard(index: int, row_group_limit: int | None = None) -> dict:
+    """Extract every passing unit from one shard.
+
+    Returns serialisable results rather than writing, so the sweep can run in a
+    process pool: a single HTTP connection tops out around 8 MB/s against the
+    Hugging Face CDN, and the YAML parsing is CPU-bound under the GIL, so neither
+    threads nor a single process can saturate the host.
+    """
+    stats: Counter = Counter()
+    rejections = Rejections()
+    records: dict[str, list[str]] = {name: [] for name in GATES}
     fs = HfFileSystem()
     with fs.open(shard_path(index), "rb") as raw:
         reader = CountingReader(raw)
@@ -309,18 +318,25 @@ def extract_shard(index: int, writers: dict, stats: Counter, rejections: Rejecti
                                 for f in unit_files
                             ],
                         }
-                        writers[unit_type].write(
-                            json.dumps(record, ensure_ascii=False) + "\n"
+                        records[unit_type].append(
+                            json.dumps(record, ensure_ascii=False)
                         )
                         stats[f"extracted/{unit_type}"] += 1
 
-        return reader.bytes_read
+        return {
+            "index": index,
+            "bytes": reader.bytes_read,
+            "records": records,
+            "stats": dict(stats),
+            "rejections": dict(rejections.counts),
+        }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--shards", type=int, default=20, help="how many shards to sweep")
     parser.add_argument("--offset", type=int, default=0, help="skip this many sampled shards")
+    parser.add_argument("--workers", type=int, default=8, help="parallel shard readers")
     parser.add_argument("--row-groups", type=int, default=None)
     parser.add_argument("--out", default="units", help="output directory")
     args = parser.parse_args()
@@ -333,8 +349,10 @@ def main() -> None:
             done = set(json.load(handle).get("completed", []))
         print(f"resuming, {len(done)} shards already done", file=sys.stderr)
 
-    indices = [i for i in sample_indices(args.shards + args.offset)[args.offset:]
-               if i not in done]
+    indices = [
+        i for i in sample_indices(args.shards + args.offset)[args.offset:]
+        if i not in done
+    ]
     writers = {
         name: gzip.open(os.path.join(args.out, f"{name}.jsonl.gz"), "at", encoding="utf-8")
         for name in GATES
@@ -343,34 +361,54 @@ def main() -> None:
     rejections = Rejections()
     total_bytes = 0
     started = time.time()
+    completed = 0
 
     try:
-        for number, index in enumerate(indices, start=1):
-            pulled = extract_shard(index, writers, stats, rejections, args.row_groups)
-            total_bytes += pulled
-            done.add(index)
-            for writer in writers.values():
-                writer.flush()
-            with open(state_path, "w") as handle:
-                json.dump({"completed": sorted(done)}, handle)
-            elapsed = time.time() - started
-            extracted = sum(v for k, v in stats.items() if k.startswith("extracted/"))
-            print(
-                f"  [{number}/{len(indices)}] shard {index:05d}  "
-                f"{total_bytes / 1e9:.1f} GB  {elapsed / 60:.1f} min  "
-                f"{total_bytes / 1e6 / max(elapsed, 1):.1f} MB/s  "
-                f"{extracted:,} units",
-                file=sys.stderr,
-                flush=True,
-            )
+        with ProcessPoolExecutor(max_workers=args.workers) as pool:
+            futures = {
+                pool.submit(collect_shard, index, args.row_groups): index
+                for index in indices
+            }
+            for future in as_completed(futures):
+                index = futures[future]
+                try:
+                    result = future.result()
+                except Exception as error:  # noqa: BLE001 - keep sweeping
+                    print(f"  shard {index:05d} FAILED: {error}", file=sys.stderr, flush=True)
+                    continue
+
+                for unit_type, lines in result["records"].items():
+                    for line in lines:
+                        writers[unit_type].write(line + "\n")
+                    writers[unit_type].flush()
+                stats.update(result["stats"])
+                rejections.counts.update(result["rejections"])
+                total_bytes += result["bytes"]
+                done.add(index)
+                completed += 1
+                with open(state_path, "w") as handle:
+                    json.dump({"completed": sorted(done)}, handle)
+
+                elapsed = time.time() - started
+                extracted = sum(v for k, v in stats.items() if k.startswith("extracted/"))
+                print(
+                    f"  [{completed}/{len(indices)}] shard {index:05d}  "
+                    f"{total_bytes / 1e9:.1f} GB  {elapsed / 60:.1f} min  "
+                    f"{total_bytes / 1e6 / max(elapsed, 1):.1f} MB/s  "
+                    f"{extracted:,} units",
+                    file=sys.stderr,
+                    flush=True,
+                )
     finally:
         for writer in writers.values():
             writer.close()
 
+    elapsed = time.time() - started
     print()
     print("=" * 70)
-    print(f"swept {len(done)} shards, {total_bytes / 1e9:.1f} GB, "
-          f"{(time.time() - started) / 60:.1f} min")
+    print(f"swept {completed} shards this run ({len(done)} total), "
+          f"{total_bytes / 1e9:.1f} GB, {elapsed / 60:.1f} min, "
+          f"{total_bytes / 1e6 / max(elapsed, 1):.1f} MB/s")
     print(f"repos seen: {stats['repos']:,}  forks skipped: {stats['skipped_forks']:,}")
     print()
     for unit_type in GATES:
@@ -387,7 +425,8 @@ def main() -> None:
     with open(os.path.join(args.out, "stats.json"), "w") as handle:
         json.dump(
             {"stats": dict(stats), "rejections": dict(rejections.counts),
-             "bytes": total_bytes, "shards": sorted(done)},
+             "bytes": total_bytes, "shards": sorted(done),
+             "seconds": round(elapsed, 1)},
             handle,
             indent=2,
         )
