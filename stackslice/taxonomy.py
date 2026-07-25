@@ -64,6 +64,7 @@ RULES: tuple[Rule, ...] = (
     _rule("drone", r"(^|/)\.drone" + YAML_EXT, Precision.EXACT),
     _rule("buildkite", r"(^|/)\.buildkite/[^/]+" + YAML_EXT, Precision.EXACT),
     _rule("travis", r"(^|/)\.travis" + YAML_EXT, Precision.EXACT),
+    _rule("codebuild", r"(^|/)buildspec[^/]*" + YAML_EXT, Precision.EXACT),
     _rule("tekton", r"(^|/)\.tekton/[^/]+" + YAML_EXT, Precision.STRUCTURAL),
     # --- Terraform / OpenTofu / Packer ------------------------------------
     _rule("packer", r"\.pkr\.(hcl|json)$", Precision.EXACT),

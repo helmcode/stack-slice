@@ -279,6 +279,119 @@ count, presence of `values.yaml`, parseable `Chart.yaml`, renderable templates.
 Scanning ~5% of the corpus (~230 GB) yields roughly 4,500 charts to filter down
 from, which is ample for a benchmark suite.
 
+## 8. Phase 1: the four YAML classes are now usable
+
+The Phase 0.5 verdict was that path rules cannot label YAML. `resolve.py`
+replaces them with a three-source pipeline, and `measure.py` scores the result
+against `verify.py`, which loads every document with PyYAML and inspects its real
+structure. Scoring regexes against regexes proves nothing; scoring them against
+an independent parser does.
+
+The pipeline, in precedence order:
+
+1. **Repository context wins.** A file inside a directory holding `Chart.yaml` is
+   Helm, whatever its content says, which is the only way to claim `values.yaml`
+   and `_helpers.tpl`. A file inside `roles/<name>/{tasks,defaults,vars}/` is
+   Ansible for the same reason.
+2. **Content decides for YAML.** The low-precision path guesses (`k8s/`,
+   `manifests/`, `templates/`) are no longer emitted as labels at all.
+3. **Paths stay authoritative where they are exact** (`.tf`, `Dockerfile`,
+   `.nix`) or canonical rather than conventional (`.github/workflows/`).
+
+### 8.1 Before and after, same 3 shards
+
+| Class | Precision before | Precision after | Recall before | Recall after |
+|---|---|---|---|---|
+| kubernetes | 56.81% | **97.82%** | 33.11% | **97.17%** |
+| github_actions | n/a | **98.90%** | 97.10% | **100.00%** |
+| compose | n/a | **97.20%** | 77.89% | **99.26%** |
+| ansible | 35.80% | **86.40%** | 28.46% | **90.26%** |
+| helm | not measurable | **93.94%** | not measurable | see below |
+| terraform | 98.87% | 98.87% (unchanged, path is exact) | | |
+| dockerfile | 99.73% | 99.73% (unchanged, path is exact) | | |
+
+So Kubernetes, Helm, GitHub Actions and Compose are all usable now, and Ansible
+is usable with a caveat. Recall for Kubernetes went from catching one manifest in
+three to catching 97 in 100, because content finds manifests wherever they live.
+
+Where the residual disagreement goes is worth reading: of the manifests the
+parser recognises, 97.17% are labelled `kubernetes`, 2.4% are labelled `helm`
+(untemplated YAML sitting inside a chart, arguably correct) and only 0.42% are
+dropped entirely.
+
+### 8.2 Evidence mix, which is the interesting operational number
+
+| Class | From content | From repo context | From path alone |
+|---|---|---|---|
+| kubernetes | 800 (+394 agreeing with path) | 0 | 0 |
+| ansible | 473 (+26) | **460** | 38 |
+| helm | 106 | **98** | 42 |
+| github_actions | 42 (+1406) | 0 | 9 |
+| compose | 115 (+1056) | 0 | 77 |
+
+Ansible and Helm draw roughly half their labels from repository context alone.
+Those files cannot be classified from their own bytes at any cost, which is the
+concrete argument for The Stack v3's repository grouping over v2's flat files.
+
+### 8.3 Two honest caveats
+
+- **The Ansible arbiter is weak.** `apiVersion` plus `kind` is unambiguous, so
+  the Kubernetes score is solid. "A list of mappings carrying Ansible-ish keys"
+  also matches plenty of ordinary YAML lists, so Ansible's 86.40% is a soft
+  floor and not a precise figure. Much of the unconfirmed remainder is role
+  variable files (`defaults/main.yml`), which are plain variable trees that no
+  parser can positively identify as Ansible.
+- **Helm recall cannot be measured this way at all.** Chart templates are not
+  valid YAML, so the parser can never bless them. Precision is measured
+  structurally instead: 93.94%, counting a Go-templated chart member or a
+  parseable `Chart.yaml` as confirmation.
+
+### 8.4 Fixes this phase, all found by tests or by inspecting disagreements
+
+- `templates/*.yaml` under a `Chart.yaml` now resolve to `helm`, not
+  `kubernetes`. This was the 17.22% contamination measured in Phase 0.5.
+- Compose precision rose from 84.91% to 97.20% by requiring `services:` to open
+  a **mapping**. Travis CI declares a top-level `services:` as a *list*
+  (`- docker`), and CodeBuild, Amplify and Read the Docs all pair `version:` with
+  a phase called `build:`; the old rule swallowed all four.
+- Jinja inside `roles/*/templates/` no longer reads as a Helm chart template.
+  Ansible roles have `templates/` directories too.
+- Bare Ansible task lists (a module call with no `hosts:` or `tasks:` header) are
+  now detected.
+- Added `buildspec.yml` (AWS CodeBuild) as its own class rather than leaving it
+  to be mislabelled.
+
+## 9. What the non-infrastructure YAML actually is
+
+59.58% of YAML in the corpus is not infrastructure. Rather than guess, the
+measurement pass collects the real top-level keys and filenames of every file it
+drops. The families, from 13,088 YAML files across 3 shards:
+
+| Family | Evidence | Count |
+|---|---|---|
+| **JVM / Spring app config** | `application.yml` (431), `application.yaml` (55), `bootstrap.yml` (71), key signatures `spring`, `server,spring`, `eureka,server,spring` | ~750 |
+| **i18n and pluralisation** | signature `one,two` (336, plural forms), `en` (50), `en.yml` (40) | ~430 |
+| **Drupal exported config** | signature `dependencies,langcode,status,uuid` (256), first key `uuid` (259) | ~260 |
+| **dbt data models** | `sources.yml` (131), `schema.yml` (114), signatures `models,version` (157), `sources,version` (156) | ~300 |
+| **Static site generators** | `_config.yml` (168, Jekyll) | ~170 |
+| **Dart / Flutter packages** | `pubspec.yaml` (160), signature `description,name,publish_to,version` (100) | ~160 |
+| **Conda environments and recipes** | `meta.yaml` (68), `environment.yml` (33), signature `channels,dependencies,name` (60) | ~100 |
+| **ML experiment configs (Hydra)** | signatures `defaults,model,params,trainer` (82), `defaults,madx,model,params` (43), `MATCHER,MODEL,TEST,TRAIN` (45) | ~170 |
+| **API specs and JSON Schema** | first key `openapi` (68), `swagger.yaml` (37), signature `$id,$schema,allOf,type` (51) | ~155 |
+| **Repo hygiene** | `funding.yml` (63), `.pre-commit-config.yaml` (36) | ~100 |
+| **Vendored copies of CI config** | `.travis.yml` (70) inside `node_modules/` and `vendor/`, correctly excluded as noise | ~70 |
+| **Framework routing and DB config** | `database.yml` (44, Rails), `routing.yml` (34, Symfony), `config.yml`/`config.yaml` (152) | ~230 |
+| **Unparseable** | 652 files, of which 72 contain template actions (fragments, broken YAML) | 652 |
+
+The single largest key signature in the entire non-infrastructure bucket is
+`one,two`: Rails-style pluralisation files. The second is Drupal's config export
+format. Neither has anything to do with deployment, and both would have been
+swept into a naive "all YAML is config" slice.
+
+Practical consequence: the drop decisions are sound. Nothing in this list belongs
+in an IaC dataset, and the two families that come closest (OpenAPI specs and
+Conda environments) are already labelled separately rather than discarded blindly.
+
 ## Reproducing
 
 ```bash
@@ -288,5 +401,6 @@ uv pip install --python .venv/bin/python pyarrow huggingface_hub fsspec pytest
 .venv/bin/python probe_footer.py 0              # column sizes of one shard
 .venv/bin/python probe_licenses.py 0 4098 8195  # license_type distribution
 .venv/bin/python -m stackslice.scan --shards 24 # the metadata report
-.venv/bin/python -m stackslice.validate --shards 3 # the content validation
+.venv/bin/python -m stackslice.validate --shards 3 # heuristics vs content
+.venv/bin/python -m stackslice.measure  --shards 3 # final labels vs YAML parser
 ```

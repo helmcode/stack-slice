@@ -15,9 +15,14 @@ CI pipelines and Prometheus rules are all just `YAML` to go-enry.
 
 ## Status
 
-Phase 0 (measurement) is complete. See [FINDINGS.md](FINDINGS.md) for the
-numbers, including two findings about the dataset's license labels that affect
-what any derived artifact can claim.
+Phases 0 (sizing), 0.5 (content validation) and 1 (final labelling) are complete.
+See [FINDINGS.md](FINDINGS.md) for the numbers, including two findings about the
+dataset's license labels that affect what any derived artifact can claim.
+
+Measured label quality against an independent YAML parser: Kubernetes 97.8%
+precision / 97.2% recall, GitHub Actions 98.9% / 100%, Compose 97.2% / 99.3%,
+Helm 93.9% precision, Ansible 86.4% / 90.3%, Terraform 98.9% and Dockerfile
+99.7% from paths alone.
 
 ## Setup
 
@@ -37,6 +42,9 @@ No Hugging Face token is required; the dataset is public and ungated.
 # Per-column compressed sizes of a single shard
 .venv/bin/python probe_footer.py 0
 
+# Score final labels against the YAML parser, and profile dropped YAML
+.venv/bin/python -m stackslice.measure --shards 3
+
 # license_type distribution and repository purity
 .venv/bin/python probe_licenses.py 0 4098 8195
 
@@ -48,9 +56,14 @@ No Hugging Face token is required; the dataset is public and ungated.
 
 | Path | Purpose |
 |---|---|
-| `stackslice/taxonomy.py` | IaC classifier (path + language rules, precision labels) and repository-level unit detection |
-| `stackslice/scan.py` | Sampling metadata scan and report |
-| `tests/` | Classifier and unit-detector tests |
+| `stackslice/taxonomy.py` | Path + language rules with precision labels, and repository-level unit detection |
+| `stackslice/detect.py` | Fast content detectors for YAML that paths cannot disambiguate |
+| `stackslice/resolve.py` | Final labelling: repository context, then content, then paths |
+| `stackslice/verify.py` | Independent arbiter that parses YAML with PyYAML to score the detectors |
+| `stackslice/scan.py` | Cheap sampling metadata scan (1% of bytes) |
+| `stackslice/validate.py` | Content pass measuring the path heuristics |
+| `stackslice/measure.py` | Scores final labels against the parser, and characterises dropped YAML |
+| `tests/` | 84 tests over the classifier, detectors, resolver and arbiter |
 | `probe_*.py` | One-off measurements backing FINDINGS.md |
 
 ## Design notes

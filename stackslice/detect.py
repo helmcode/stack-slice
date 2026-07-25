@@ -37,8 +37,16 @@ K8S_API_VERSION = re.compile(r"^\s*apiVersion:\s*\S", re.MULTILINE)
 K8S_KIND = re.compile(r"^\s*kind:\s*\S", re.MULTILINE)
 # Go template actions, the unambiguous mark of a chart template.
 GO_TEMPLATE = re.compile(r"\{\{[-\s]*[\w.$(\"]")
-COMPOSE_SERVICES = re.compile(r"^services:\s*$", re.MULTILINE)
-COMPOSE_HINT = re.compile(r"^(version|services|networks|volumes):", re.MULTILINE)
+# `services:` must open a mapping of service names. Travis CI also declares a
+# top-level `services:`, but as a list (`- docker`), and CodeBuild, Amplify and
+# Read the Docs all pair a top-level `version:` with a phase called `build:`.
+# Requiring an indented key underneath is what separates Compose from all four.
+COMPOSE_SERVICES = re.compile(
+    r"^services:[ \t]*(?:#[^\n]*)?\n"
+    r"(?:[ \t]*(?:#[^\n]*)?\n)*"
+    r"[ \t]+[\w.\-\"']+[ \t]*:",
+    re.MULTILINE,
+)
 GHA_ON = re.compile(r"^(on|\"on\"|'on'):", re.MULTILINE)
 GHA_JOBS = re.compile(r"^jobs:", re.MULTILINE)
 GHA_STEPS = re.compile(r"^\s+(uses|runs-on):", re.MULTILINE)
@@ -87,9 +95,10 @@ def classify_yaml(content: str, file_path: str = "") -> YamlKind:
         return YamlKind.HELM_TEMPLATE
     if has_kind:
         return YamlKind.K8S_MANIFEST
-    if COMPOSE_SERVICES.search(head) or (
-        COMPOSE_HINT.search(head) and re.search(r"^\s+(image|build):", head, re.MULTILINE)
-    ):
+    # Legacy v1 Compose (bare service names at the top level, no `services:`
+    # key) is deliberately not detected: nothing distinguishes it from any other
+    # mapping, and chasing it costs more precision than the format is worth.
+    if COMPOSE_SERVICES.search(head):
         return YamlKind.COMPOSE
     if GHA_ON.search(head) and (GHA_JOBS.search(head) or GHA_STEPS.search(head)):
         return YamlKind.GITHUB_ACTIONS

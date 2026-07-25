@@ -1,0 +1,486 @@
+{
+  "sample": {
+    "shards": 3,
+    "row_groups": "12/12",
+    "bytes_fetched_gb": 1.45,
+    "repos": 63185,
+    "files": 948362,
+    "yaml_files": 13088
+  },
+  "final_labels": {
+    "shell": {
+      "files": 6710,
+      "files_extrapolated": 18331720,
+      "gb_extrapolated": 24.34,
+      "evidence": {
+        "path": 6710
+      }
+    },
+    "dockerfile": {
+      "files": 1824,
+      "files_extrapolated": 4983168,
+      "gb_extrapolated": 2.8,
+      "evidence": {
+        "path": 1824
+      }
+    },
+    "makefile": {
+      "files": 1631,
+      "files_extrapolated": 4455892,
+      "gb_extrapolated": 12.0,
+      "evidence": {
+        "path": 1631
+      }
+    },
+    "github_actions": {
+      "files": 1457,
+      "files_extrapolated": 3980524,
+      "gb_extrapolated": 5.63,
+      "evidence": {
+        "path+content": 1406,
+        "content": 42,
+        "path": 9
+      }
+    },
+    "terraform": {
+      "files": 1375,
+      "files_extrapolated": 3756500,
+      "gb_extrapolated": 5.34,
+      "evidence": {
+        "path": 1375
+      }
+    },
+    "compose": {
+      "files": 1248,
+      "files_extrapolated": 3409536,
+      "gb_extrapolated": 3.22,
+      "evidence": {
+        "path+content": 1056,
+        "content": 115,
+        "path": 77
+      }
+    },
+    "kubernetes": {
+      "files": 1194,
+      "files_extrapolated": 3262008,
+      "gb_extrapolated": 2.81,
+      "evidence": {
+        "content": 800,
+        "path+content": 394
+      }
+    },
+    "ansible": {
+      "files": 997,
+      "files_extrapolated": 2723804,
+      "gb_extrapolated": 2.42,
+      "evidence": {
+        "content": 473,
+        "context": 460,
+        "path": 38,
+        "path+content": 26
+      }
+    },
+    "travis": {
+      "files": 278,
+      "files_extrapolated": 759496,
+      "gb_extrapolated": 0.32,
+      "evidence": {
+        "path": 278
+      }
+    },
+    "helm": {
+      "files": 246,
+      "files_extrapolated": 672072,
+      "gb_extrapolated": 0.93,
+      "evidence": {
+        "content": 106,
+        "context": 98,
+        "path": 42
+      }
+    },
+    "nix": {
+      "files": 211,
+      "files_extrapolated": 576452,
+      "gb_extrapolated": 0.7,
+      "evidence": {
+        "path": 211
+      }
+    },
+    "gitlab_ci": {
+      "files": 133,
+      "files_extrapolated": 363356,
+      "gb_extrapolated": 0.24,
+      "evidence": {
+        "content": 91,
+        "path+content": 35,
+        "path": 7
+      }
+    },
+    "puppet": {
+      "files": 133,
+      "files_extrapolated": 363356,
+      "gb_extrapolated": 0.63,
+      "evidence": {
+        "path": 133
+      }
+    },
+    "nginx": {
+      "files": 123,
+      "files_extrapolated": 336036,
+      "gb_extrapolated": 0.49,
+      "evidence": {
+        "path": 123
+      }
+    },
+    "jenkins": {
+      "files": 117,
+      "files_extrapolated": 319644,
+      "gb_extrapolated": 0.85,
+      "evidence": {
+        "path": 117
+      }
+    },
+    "bazel": {
+      "files": 109,
+      "files_extrapolated": 297788,
+      "gb_extrapolated": 0.55,
+      "evidence": {
+        "path": 109
+      }
+    },
+    "cloudformation": {
+      "files": 42,
+      "files_extrapolated": 114744,
+      "gb_extrapolated": 0.37,
+      "evidence": {
+        "content": 39,
+        "path": 2,
+        "path+content": 1
+      }
+    },
+    "vagrant": {
+      "files": 36,
+      "files_extrapolated": 98352,
+      "gb_extrapolated": 0.1,
+      "evidence": {
+        "path": 36
+      }
+    },
+    "circleci": {
+      "files": 32,
+      "files_extrapolated": 87424,
+      "gb_extrapolated": 0.16,
+      "evidence": {
+        "path": 32
+      }
+    },
+    "serverless": {
+      "files": 31,
+      "files_extrapolated": 84692,
+      "gb_extrapolated": 0.18,
+      "evidence": {
+        "path": 31
+      }
+    },
+    "kustomize": {
+      "files": 26,
+      "files_extrapolated": 71032,
+      "gb_extrapolated": 0.03,
+      "evidence": {
+        "path": 26
+      }
+    },
+    "azure_pipelines": {
+      "files": 23,
+      "files_extrapolated": 62836,
+      "gb_extrapolated": 0.13,
+      "evidence": {
+        "path": 23
+      }
+    },
+    "chef": {
+      "files": 18,
+      "files_extrapolated": 49176,
+      "gb_extrapolated": 0.02,
+      "evidence": {
+        "path": 18
+      }
+    },
+    "prometheus": {
+      "files": 12,
+      "files_extrapolated": 32784,
+      "gb_extrapolated": 0.08,
+      "evidence": {
+        "path+content": 10,
+        "content": 2
+      }
+    },
+    "codebuild": {
+      "files": 10,
+      "files_extrapolated": 27320,
+      "gb_extrapolated": 0.02,
+      "evidence": {
+        "path": 10
+      }
+    },
+    "justfile": {
+      "files": 9,
+      "files_extrapolated": 24588,
+      "gb_extrapolated": 0.03,
+      "evidence": {
+        "path": 9
+      }
+    },
+    "salt": {
+      "files": 9,
+      "files_extrapolated": 24588,
+      "gb_extrapolated": 0.01,
+      "evidence": {
+        "path": 9
+      }
+    },
+    "haproxy": {
+      "files": 7,
+      "files_extrapolated": 19124,
+      "gb_extrapolated": 0.01,
+      "evidence": {
+        "path": 7
+      }
+    },
+    "cloud_init": {
+      "files": 5,
+      "files_extrapolated": 13660,
+      "gb_extrapolated": 0.03,
+      "evidence": {
+        "path": 5
+      }
+    },
+    "pulumi": {
+      "files": 5,
+      "files_extrapolated": 13660,
+      "gb_extrapolated": 0.0,
+      "evidence": {
+        "path": 5
+      }
+    },
+    "packer": {
+      "files": 4,
+      "files_extrapolated": 10928,
+      "gb_extrapolated": 0.03,
+      "evidence": {
+        "path": 4
+      }
+    },
+    "grafana": {
+      "files": 4,
+      "files_extrapolated": 10928,
+      "gb_extrapolated": 0.07,
+      "evidence": {
+        "path": 4
+      }
+    },
+    "helmfile": {
+      "files": 3,
+      "files_extrapolated": 8196,
+      "gb_extrapolated": 0.01,
+      "evidence": {
+        "path": 3
+      }
+    },
+    "drone": {
+      "files": 2,
+      "files_extrapolated": 5464,
+      "gb_extrapolated": 0.0,
+      "evidence": {
+        "path": 2
+      }
+    },
+    "systemd": {
+      "files": 1,
+      "files_extrapolated": 2732,
+      "gb_extrapolated": 0.01,
+      "evidence": {
+        "path": 1
+      }
+    }
+  },
+  "precision_vs_parser": {
+    "github_actions": {
+      "counts": {
+        "confirmed": 1441,
+        "unconfirmed": 16
+      },
+      "confirmed_pct": 98.9
+    },
+    "helm": {
+      "counts": {
+        "chart_member_untemplated": 12,
+        "confirmed_templated": 160,
+        "confirmed_chart_metadata": 26
+      },
+      "confirmed_pct": 93.94
+    },
+    "compose": {
+      "counts": {
+        "confirmed": 1213,
+        "unconfirmed": 35
+      },
+      "confirmed_pct": 97.2
+    },
+    "ansible": {
+      "counts": {
+        "confirmed": 788,
+        "unconfirmed": 124
+      },
+      "confirmed_pct": 86.4
+    },
+    "kubernetes": {
+      "counts": {
+        "confirmed": 1168,
+        "unconfirmed": 26
+      },
+      "confirmed_pct": 97.82
+    }
+  },
+  "recall_vs_parser": {
+    "github_actions": {
+      "counts": {
+        "github_actions": 1441
+      },
+      "caught_pct": 100.0,
+      "missed_as_unlabelled_pct": 0.0
+    },
+    "kubernetes": {
+      "counts": {
+        "kubernetes": 1168,
+        "helm": 29,
+        "unlabelled": 5
+      },
+      "caught_pct": 97.17,
+      "missed_as_unlabelled_pct": 0.42
+    },
+    "compose": {
+      "counts": {
+        "compose": 1213,
+        "unlabelled": 8,
+        "ansible": 1
+      },
+      "caught_pct": 99.26,
+      "missed_as_unlabelled_pct": 0.65
+    },
+    "ansible": {
+      "counts": {
+        "ansible": 788,
+        "unlabelled": 84,
+        "kubernetes": 1
+      },
+      "caught_pct": 90.26,
+      "missed_as_unlabelled_pct": 9.62
+    }
+  },
+  "units_detected": {
+    "ansible": {
+      "count": 156,
+      "extrapolated": 426192
+    },
+    "helm": {
+      "count": 26,
+      "extrapolated": 71032
+    }
+  },
+  "non_infra_yaml": {
+    "unparseable": 652,
+    "unparseable_templated": 72,
+    "top_first_keys": {
+      "name": 928,
+      "version": 550,
+      "one": 343,
+      "server": 335,
+      "spring": 272,
+      "uuid": 259,
+      "defaults": 197,
+      "id": 123,
+      "title": 103,
+      "type": 83,
+      "Queries": 82,
+      "openapi": 68,
+      "language": 65,
+      "$id": 63,
+      "description": 62,
+      "en": 52,
+      "services": 50,
+      "MODEL": 47,
+      "image": 42,
+      "$schema": 42,
+      "global": 41,
+      "preset": 40,
+      "requires": 40,
+      "artifact_uri": 39,
+      "category": 35,
+      "repos": 34,
+      "first": 31,
+      "pipeline": 31,
+      "development": 30,
+      "theme": 30
+    },
+    "top_key_signatures": {
+      "one,two": 336,
+      "dependencies,langcode,status,uuid": 256,
+      "models,version": 157,
+      "sources,version": 156,
+      "spring": 128,
+      "description,name,publish_to,version": 100,
+      "server,spring": 93,
+      "id,update_date": 87,
+      "defaults,model,params,trainer": 82,
+      "Queries": 82,
+      "description,name,parameters,sources": 74,
+      "category,labels,name,version": 70,
+      "hash,name,type,version": 67,
+      "channels,dependencies,name": 60,
+      "description,title": 56,
+      "$id,$schema,allOf,type": 51,
+      "en": 50,
+      "eureka,server,spring": 48,
+      "services": 48,
+      "author,description,name,reference": 46,
+      "MATCHER,MODEL,TEST,TRAIN": 45,
+      "defaults,madx,model,params": 43,
+      "$schema,content,id,name": 39,
+      "artifact_uri,end_time,entry_point_name,experiment_id": 37,
+      "updates,version": 35
+    },
+    "top_basenames": {
+      "application.yml": 431,
+      "_config.yml": 168,
+      "pubspec.yaml": 160,
+      "sources.yml": 131,
+      "schema.yml": 114,
+      "main.yml": 97,
+      "definition.yaml": 95,
+      "build.yaml": 92,
+      "task-remote-info.yaml": 87,
+      "config.yml": 82,
+      "bootstrap.yml": 71,
+      "config.yaml": 70,
+      ".travis.yml": 70,
+      "meta.yaml": 68,
+      "funding.yml": 63,
+      "application.yaml": 55,
+      "_assignment.yaml": 52,
+      "database.yml": 44,
+      "plugin.yml": 43,
+      "en.yml": 40,
+      "values.yaml": 40,
+      "swagger.yaml": 37,
+      ".pre-commit-config.yaml": 36,
+      "manifest.yml": 35,
+      "routing.yml": 34,
+      "environment.yml": 33,
+      "task-info.yaml": 33,
+      "users.yml": 32,
+      "dependabot.yml": 32,
+      "mkdocs.yml": 30
+    }
+  }
+}

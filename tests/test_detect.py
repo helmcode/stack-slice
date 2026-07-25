@@ -217,3 +217,54 @@ def test_ansible_role_templates_are_not_helm_templates():
 def test_bare_task_list_is_ansible():
     assert classify_yaml(ANSIBLE_TASKS, "roles/base/tasks/main.yml") is YamlKind.ANSIBLE
     assert classify_yaml(ANSIBLE_TASKS, "tasks/install.yml") is YamlKind.ANSIBLE
+
+
+TRAVIS_WITH_SERVICES = """\
+language: java
+services:
+  - docker
+script: mvn clean install
+"""
+
+BUILDSPEC = """\
+version: 0.2
+phases:
+  pre_build:
+    commands:
+      - echo logging in
+  build:
+    commands:
+      - docker build -t app .
+"""
+
+READTHEDOCS = """\
+version: 2
+build:
+  os: "ubuntu-20.04"
+  tools:
+    python: "3.12"
+"""
+
+COMPOSE_WITH_COMMENT = """\
+services:
+  # the only service
+  web:
+    image: nginx
+"""
+
+
+@pytest.mark.parametrize(
+    ("content", "path"),
+    [
+        (TRAVIS_WITH_SERVICES, ".travis.yml"),
+        (BUILDSPEC, "buildspec.yml"),
+        (READTHEDOCS, ".readthedocs.yml"),
+    ],
+)
+def test_ci_configs_are_not_compose(content, path):
+    """A list-valued `services:` or a `build:` phase is not Docker Compose."""
+    assert classify_yaml(content, path) is not YamlKind.COMPOSE
+
+
+def test_compose_still_detected_with_comments():
+    assert classify_yaml(COMPOSE_WITH_COMMENT, "compose.yaml") is YamlKind.COMPOSE
