@@ -1,0 +1,397 @@
+"""Stream shards and extract complete, quality-gated infrastructure units.
+
+Nothing is stored on disk except the output: pyarrow reads each shard over HTTP
+range requests, one row group at a time, so a sweep of the corpus needs bandwidth
+and CPU but almost no storage.
+
+Units are emitted as gzipped JSONL, one record per unit, carrying every file of
+that unit plus the provenance The Stack v3's licence requires (`repo_path`,
+`commit_id`, per-file `license_type` and `detected_licenses`).
+
+Quality gates are content-based rather than popularity-based. Star-gating charts
+would mean reading roughly a third of the corpus to collect a couple of thousand,
+whereas gating on structure keeps far more of what is actually usable.
+"""
+
+from __future__ import annotations
+
+import argparse
+import gzip
+import json
+import os
+import sys
+import time
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
+
+import pyarrow.compute as pc
+import pyarrow.parquet as pq
+from huggingface_hub import HfFileSystem
+
+from .detect import is_terraform, looks_generated
+from .resolve import resolve_repo
+from .scan import CountingReader, sample_indices, shard_path
+from .taxonomy import detect_units
+from .verify import verify_ansible, verify_chart_metadata, verify_k8s_manifest
+
+EXTRACT_COLUMNS = [
+    "repo_path",
+    "commit_id",
+    "github_metadata",
+    "files.list.element.file_path",
+    "files.list.element.language",
+    "files.list.element.size_bytes",
+    "files.list.element.license_type",
+    "files.list.element.detected_licenses",
+    "files.list.element.content",
+]
+
+# Bounds that keep a unit reviewable by a human and cheap to render in a test.
+MAX_FILE_BYTES = 256 * 1024
+MAX_UNIT_BYTES = 2 * 1024 * 1024
+MAX_UNIT_FILES = 60
+
+
+@dataclass
+class Rejections:
+    counts: Counter = field(default_factory=Counter)
+
+    def record(self, unit_type: str, reason: str) -> None:
+        self.counts[f"{unit_type}/{reason}"] += 1
+
+
+def _within_bounds(files: list[dict]) -> str | None:
+    if not files:
+        return "empty"
+    if len(files) > MAX_UNIT_FILES:
+        return "too_many_files"
+    total = sum(len(f["content"].encode("utf-8", "replace")) for f in files)
+    if total > MAX_UNIT_BYTES:
+        return "unit_too_large"
+    if any(len(f["content"]) > MAX_FILE_BYTES for f in files):
+        return "file_too_large"
+    return None
+
+
+def gate_helm_chart(files: list[dict]) -> tuple[bool, str, dict]:
+    """A chart must declare itself, ship values, and have real templates."""
+    reason = _within_bounds(files)
+    if reason:
+        return False, reason, {}
+
+    by_name = {f["relative"]: f for f in files}
+    chart = next(
+        (f for name, f in by_name.items() if name.lower() in ("chart.yaml", "chart.yml")),
+        None,
+    )
+    if chart is None:
+        return False, "no_chart_metadata", {}
+    if not verify_chart_metadata(chart["content"]):
+        return False, "unparseable_chart_metadata", {}
+
+    templates = [
+        f for name, f in by_name.items()
+        if name.lower().startswith("templates/") and name.lower().endswith((".yaml", ".yml"))
+    ]
+    if len(templates) < 2:
+        return False, "too_few_templates", {}
+
+    # A chart without values.yaml is still valid Helm, so this is a richness
+    # flag rather than a gate. Charts are the scarcest unit; do not throw away
+    # valid ones for missing niceties.
+    has_values = any(name.lower().startswith("values") for name in by_name)
+
+    templated = sum(1 for f in templates if "{{" in f["content"])
+    if templated == 0:
+        return False, "no_templating", {}
+
+    return True, "", {
+        "templates": len(templates),
+        "templated_templates": templated,
+        "has_values": has_values,
+        "helpers": sum(1 for n in by_name if n.lower().endswith(".tpl")),
+        "files": len(files),
+    }
+
+
+def gate_terraform_module(files: list[dict]) -> tuple[bool, str, dict]:
+    """A module needs several .tf files and at least one real declaration."""
+    reason = _within_bounds(files)
+    if reason:
+        return False, reason, {}
+
+    tf_files = [f for f in files if f["relative"].endswith(".tf")]
+    if len(tf_files) < 2:
+        return False, "too_few_tf_files", {}
+    declaring = [f for f in tf_files if is_terraform(f["content"])]
+    if not declaring:
+        return False, "no_declarations", {}
+    if all(looks_generated(f["content"]) for f in tf_files):
+        return False, "generated", {}
+
+    names = {f["relative"].lower() for f in tf_files}
+    return True, "", {
+        "tf_files": len(tf_files),
+        "declaring": len(declaring),
+        "has_variables": any("variable" in n for n in names),
+        "has_outputs": any("output" in n for n in names),
+        "files": len(files),
+    }
+
+
+def gate_ansible_role(files: list[dict]) -> tuple[bool, str, dict]:
+    """A role needs a parseable task list, not just a directory shaped like one."""
+    reason = _within_bounds(files)
+    if reason:
+        return False, reason, {}
+
+    tasks = [
+        f for f in files
+        if f["relative"].lower().startswith("tasks/")
+        and f["relative"].lower().endswith((".yml", ".yaml"))
+    ]
+    if not tasks:
+        return False, "no_tasks", {}
+    if not any(verify_ansible(f["content"]) for f in tasks):
+        return False, "unverified_tasks", {}
+
+    directories = {f["relative"].split("/")[0].lower() for f in files}
+    return True, "", {
+        "task_files": len(tasks),
+        "has_defaults": "defaults" in directories,
+        "has_handlers": "handlers" in directories,
+        "has_templates": "templates" in directories,
+        "files": len(files),
+    }
+
+
+def gate_manifest_set(files: list[dict]) -> tuple[bool, str, dict]:
+    """A deployable set is two or more manifests that actually parse."""
+    reason = _within_bounds(files)
+    if reason:
+        return False, reason, {}
+    verified = [f for f in files if verify_k8s_manifest(f["content"])]
+    if len(verified) < 2:
+        return False, "too_few_manifests", {}
+    kinds = set()
+    for f in verified:
+        for line in f["content"].splitlines():
+            if line.startswith("kind:"):
+                kinds.add(line.split(":", 1)[1].strip())
+    return True, "", {
+        "manifests": len(verified),
+        "kinds": sorted(kinds)[:12],
+        "files": len(files),
+    }
+
+
+GATES = {
+    "helm_chart": gate_helm_chart,
+    "terraform_module": gate_terraform_module,
+    "ansible_role": gate_ansible_role,
+    "manifest_set": gate_manifest_set,
+}
+
+
+def _unit_candidates(paths: list[str], resolved) -> dict[str, dict[str, list[int]]]:
+    """Group file positions by unit type and unit prefix."""
+    units = detect_units(paths)
+    candidates: dict[str, dict[str, list[int]]] = {
+        name: defaultdict(list) for name in GATES
+    }
+
+    prefixes = {
+        "helm_chart": units["helm_chart"],
+        "terraform_module": units["terraform_module"],
+        "ansible_role": units["ansible_role"],
+    }
+    for unit_type, unit_prefixes in prefixes.items():
+        for prefix in unit_prefixes:
+            for index, path in enumerate(paths):
+                if prefix == "":
+                    if "/" not in path or path.startswith(("templates/", "tasks/")):
+                        candidates[unit_type][prefix].append(index)
+                elif path.startswith(f"{prefix}/"):
+                    candidates[unit_type][prefix].append(index)
+
+    # Manifest sets are directories whose files we labelled kubernetes, and which
+    # are not part of a chart (charts are captured as helm_chart instead).
+    by_directory: dict[str, list[int]] = defaultdict(list)
+    for index, result in enumerate(resolved):
+        if result and result.tool == "kubernetes":
+            directory = paths[index].rsplit("/", 1)[0] if "/" in paths[index] else ""
+            by_directory[directory].append(index)
+    for directory, indices in by_directory.items():
+        if len(indices) >= 2:
+            candidates["manifest_set"][directory] = indices
+
+    return candidates
+
+
+def extract_shard(index: int, writers: dict, stats: Counter, rejections: Rejections,
+                  row_group_limit: int | None = None) -> int:
+    """Extract every passing unit from one shard. Returns bytes pulled."""
+    fs = HfFileSystem()
+    with fs.open(shard_path(index), "rb") as raw:
+        reader = CountingReader(raw)
+        parquet_file = pq.ParquetFile(reader)
+        available = parquet_file.metadata.num_row_groups
+        groups = range(available if row_group_limit is None else min(row_group_limit, available))
+
+        for group in groups:
+            table = parquet_file.read_row_group(group, columns=EXTRACT_COLUMNS)
+            files_column = table.column("files").combine_chunks()
+            repo_paths = table.column("repo_path").to_pylist()
+            commits = table.column("commit_id").to_pylist()
+            metadata = table.column("github_metadata").combine_chunks()
+            stars = metadata.field("stars").to_pylist()
+            forks = metadata.field("is_fork").to_pylist()
+
+            flat = pc.list_flatten(files_column)
+            contents = flat.field("content")
+            paths = flat.field("file_path").to_pylist()
+            languages = flat.field("language").to_pylist()
+            licenses = flat.field("license_type").to_pylist()
+            detected = flat.field("detected_licenses")
+            parent = pc.list_parent_indices(files_column).to_pylist()
+
+            by_repo: dict[int, list[int]] = defaultdict(list)
+            for position in range(len(paths)):
+                by_repo[parent[position]].append(position)
+
+            stats["repos"] += table.num_rows
+
+            for repo_index, positions in by_repo.items():
+                if forks[repo_index]:
+                    stats["skipped_forks"] += 1
+                    continue
+
+                repo_paths_local = [paths[p] for p in positions]
+                repo_languages = [languages[p] for p in positions]
+                resolved = resolve_repo(repo_paths_local, repo_languages, None)
+                candidates = _unit_candidates(repo_paths_local, resolved)
+
+                for unit_type, groups_by_prefix in candidates.items():
+                    for prefix, local_indices in groups_by_prefix.items():
+                        stats[f"candidate/{unit_type}"] += 1
+                        unit_files = []
+                        for local in local_indices:
+                            position = positions[local]
+                            path = repo_paths_local[local]
+                            relative = path[len(prefix) + 1:] if prefix else path
+                            unit_files.append({
+                                "path": path,
+                                "relative": relative,
+                                "content": contents[position].as_py() or "",
+                                "license_type": licenses[position],
+                                "detected_licenses": detected[position].as_py() or [],
+                                "size_bytes": len(contents[position].as_py() or ""),
+                            })
+
+                        passed, reason, quality = GATES[unit_type](unit_files)
+                        if not passed:
+                            rejections.record(unit_type, reason)
+                            continue
+
+                        record = {
+                            "unit_type": unit_type,
+                            "repo_path": repo_paths[repo_index],
+                            "commit_id": commits[repo_index],
+                            "stars": stars[repo_index],
+                            "unit_prefix": prefix,
+                            "shard": index,
+                            "quality": quality,
+                            "license_types": sorted(
+                                {f["license_type"] for f in unit_files if f["license_type"]}
+                            ),
+                            "files": [
+                                {k: v for k, v in f.items() if k != "relative"}
+                                for f in unit_files
+                            ],
+                        }
+                        writers[unit_type].write(
+                            json.dumps(record, ensure_ascii=False) + "\n"
+                        )
+                        stats[f"extracted/{unit_type}"] += 1
+
+        return reader.bytes_read
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--shards", type=int, default=20, help="how many shards to sweep")
+    parser.add_argument("--offset", type=int, default=0, help="skip this many sampled shards")
+    parser.add_argument("--row-groups", type=int, default=None)
+    parser.add_argument("--out", default="units", help="output directory")
+    args = parser.parse_args()
+
+    os.makedirs(args.out, exist_ok=True)
+    state_path = os.path.join(args.out, "state.json")
+    done: set[int] = set()
+    if os.path.exists(state_path):
+        with open(state_path) as handle:
+            done = set(json.load(handle).get("completed", []))
+        print(f"resuming, {len(done)} shards already done", file=sys.stderr)
+
+    indices = [i for i in sample_indices(args.shards + args.offset)[args.offset:]
+               if i not in done]
+    writers = {
+        name: gzip.open(os.path.join(args.out, f"{name}.jsonl.gz"), "at", encoding="utf-8")
+        for name in GATES
+    }
+    stats: Counter = Counter()
+    rejections = Rejections()
+    total_bytes = 0
+    started = time.time()
+
+    try:
+        for number, index in enumerate(indices, start=1):
+            pulled = extract_shard(index, writers, stats, rejections, args.row_groups)
+            total_bytes += pulled
+            done.add(index)
+            for writer in writers.values():
+                writer.flush()
+            with open(state_path, "w") as handle:
+                json.dump({"completed": sorted(done)}, handle)
+            elapsed = time.time() - started
+            extracted = sum(v for k, v in stats.items() if k.startswith("extracted/"))
+            print(
+                f"  [{number}/{len(indices)}] shard {index:05d}  "
+                f"{total_bytes / 1e9:.1f} GB  {elapsed / 60:.1f} min  "
+                f"{total_bytes / 1e6 / max(elapsed, 1):.1f} MB/s  "
+                f"{extracted:,} units",
+                file=sys.stderr,
+                flush=True,
+            )
+    finally:
+        for writer in writers.values():
+            writer.close()
+
+    print()
+    print("=" * 70)
+    print(f"swept {len(done)} shards, {total_bytes / 1e9:.1f} GB, "
+          f"{(time.time() - started) / 60:.1f} min")
+    print(f"repos seen: {stats['repos']:,}  forks skipped: {stats['skipped_forks']:,}")
+    print()
+    for unit_type in GATES:
+        candidates = stats[f"candidate/{unit_type}"]
+        extracted = stats[f"extracted/{unit_type}"]
+        rate = 100 * extracted / candidates if candidates else 0
+        print(f"{unit_type:<18} {extracted:>8,} kept of {candidates:>8,} candidates "
+              f"({rate:.1f}%)")
+    print()
+    print("top rejection reasons:")
+    for reason, count in rejections.counts.most_common(15):
+        print(f"  {reason:<44} {count:>8,}")
+
+    with open(os.path.join(args.out, "stats.json"), "w") as handle:
+        json.dump(
+            {"stats": dict(stats), "rejections": dict(rejections.counts),
+             "bytes": total_bytes, "shards": sorted(done)},
+            handle,
+            indent=2,
+        )
+
+
+if __name__ == "__main__":
+    main()
