@@ -19,6 +19,7 @@ import argparse
 import gzip
 import json
 import os
+import re
 import sys
 import time
 from collections import Counter, defaultdict
@@ -29,11 +30,18 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 from huggingface_hub import HfFileSystem
 
-from .detect import is_terraform, looks_generated
+from .detect import DOCKERFILE_INSTRUCTION, is_dockerfile, is_terraform, looks_generated
 from .resolve import resolve_repo
 from .scan import CountingReader, sample_indices, shard_path
 from .taxonomy import detect_units
-from .verify import verify_ansible, verify_chart_metadata, verify_k8s_manifest
+from .verify import (
+    load_documents,
+    verify_ansible,
+    verify_chart_metadata,
+    verify_compose,
+    verify_github_workflow,
+    verify_k8s_manifest,
+)
 
 EXTRACT_COLUMNS = [
     "repo_path",
@@ -46,6 +54,9 @@ EXTRACT_COLUMNS = [
     "files.list.element.detected_licenses",
     "files.list.element.content",
 ]
+
+# Files whose content the resolver needs in order to label them at all.
+YAML_CONTENT = re.compile(r"\.(ya?ml|tpl)$", re.IGNORECASE)
 
 # Bounds that keep a unit reviewable by a human and cheap to render in a test.
 MAX_FILE_BYTES = 256 * 1024
@@ -186,11 +197,113 @@ def gate_manifest_set(files: list[dict]) -> tuple[bool, str, dict]:
     }
 
 
+def gate_dockerfile(files: list[dict]) -> tuple[bool, str, dict]:
+    """A single-file unit: it must actually contain Dockerfile instructions."""
+    reason = _within_bounds(files)
+    if reason:
+        return False, reason, {}
+    content = files[0]["content"]
+    if not is_dockerfile(content):
+        return False, "not_a_dockerfile", {}
+    if looks_generated(content):
+        return False, "generated", {}
+
+    lines = [line.strip() for line in content.splitlines()]
+    stages = sum(1 for line in lines if line.upper().startswith("FROM "))
+    return True, "", {
+        "stages": stages,
+        "multi_stage": stages > 1,
+        "instructions": sum(
+            1 for line in lines if DOCKERFILE_INSTRUCTION.match(line)
+        ),
+        "has_user": any(line.upper().startswith("USER ") for line in lines),
+        "has_healthcheck": any(line.upper().startswith("HEALTHCHECK") for line in lines),
+        "files": 1,
+    }
+
+
+def gate_workflow(files: list[dict]) -> tuple[bool, str, dict]:
+    """A GitHub Actions workflow the parser accepts as having triggers and jobs."""
+    reason = _within_bounds(files)
+    if reason:
+        return False, reason, {}
+    content = files[0]["content"]
+    if not verify_github_workflow(content):
+        return False, "unverified_workflow", {}
+
+    documents = load_documents(content) or [{}]
+    document = documents[0] if isinstance(documents[0], dict) else {}
+    jobs = document.get("jobs") or {}
+    triggers = document.get("on", document.get(True))
+    if isinstance(triggers, dict):
+        trigger_names = sorted(str(k) for k in triggers)
+    elif isinstance(triggers, list):
+        trigger_names = sorted(str(t) for t in triggers)
+    else:
+        trigger_names = [str(triggers)] if triggers is not None else []
+
+    steps = 0
+    uses = 0
+    for job in jobs.values():
+        if not isinstance(job, dict):
+            continue
+        for step in job.get("steps") or []:
+            if isinstance(step, dict):
+                steps += 1
+                if "uses" in step:
+                    uses += 1
+    return True, "", {
+        "jobs": len(jobs),
+        "steps": steps,
+        "uses_actions": uses,
+        "triggers": trigger_names[:8],
+        "has_permissions": "permissions" in document,
+        "files": 1,
+    }
+
+
+def gate_compose(files: list[dict]) -> tuple[bool, str, dict]:
+    """A Compose file whose services mapping the parser accepts."""
+    reason = _within_bounds(files)
+    if reason:
+        return False, reason, {}
+    content = files[0]["content"]
+    if not verify_compose(content):
+        return False, "unverified_compose", {}
+
+    documents = load_documents(content) or [{}]
+    document = documents[0] if isinstance(documents[0], dict) else {}
+    services = document.get("services") or {}
+    built = sum(1 for s in services.values() if isinstance(s, dict) and "build" in s)
+    return True, "", {
+        "services": len(services),
+        "built_services": built,
+        "image_only_services": len(services) - built,
+        "has_volumes": "volumes" in document,
+        "has_networks": "networks" in document,
+        "has_healthcheck": any(
+            isinstance(s, dict) and "healthcheck" in s for s in services.values()
+        ),
+        "files": 1,
+    }
+
+
 GATES = {
     "helm_chart": gate_helm_chart,
     "terraform_module": gate_terraform_module,
     "ansible_role": gate_ansible_role,
     "manifest_set": gate_manifest_set,
+    "dockerfile": gate_dockerfile,
+    "workflow": gate_workflow,
+    "compose": gate_compose,
+}
+
+# Classes whose unit is a single file: no composition to detect, so the resolved
+# label plus a content gate is the whole story.
+SINGLE_FILE_UNITS = {
+    "dockerfile": "dockerfile",
+    "github_actions": "workflow",
+    "compose": "compose",
 }
 
 
@@ -214,6 +327,11 @@ def _unit_candidates(paths: list[str], resolved) -> dict[str, dict[str, list[int
                         candidates[unit_type][prefix].append(index)
                 elif path.startswith(f"{prefix}/"):
                     candidates[unit_type][prefix].append(index)
+
+    # Single-file units come straight from the resolved label.
+    for index, result in enumerate(resolved):
+        if result and result.tool in SINGLE_FILE_UNITS:
+            candidates[SINGLE_FILE_UNITS[result.tool]][paths[index]] = [index]
 
     # Manifest sets are directories whose files we labelled kubernetes, and which
     # are not part of a chart (charts are captured as helm_chart instead).
@@ -277,7 +395,14 @@ def collect_shard(index: int, row_group_limit: int | None = None) -> dict:
 
                 repo_paths_local = [paths[p] for p in positions]
                 repo_languages = [languages[p] for p in positions]
-                resolved = resolve_repo(repo_paths_local, repo_languages, None)
+                # Content is required here, not optional: resolving with paths
+                # alone finds only a third of real Kubernetes manifests and misses
+                # the 17% of Compose files that are not named compose.yaml.
+                repo_contents = [
+                    contents[p].as_py() if YAML_CONTENT.search(paths[p]) else None
+                    for p in positions
+                ]
+                resolved = resolve_repo(repo_paths_local, repo_languages, repo_contents)
                 candidates = _unit_candidates(repo_paths_local, resolved)
 
                 for unit_type, groups_by_prefix in candidates.items():
