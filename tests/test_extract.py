@@ -208,3 +208,39 @@ def test_compose_gate_counts_services():
 def test_compose_gate_rejects_travis_style_services_list():
     ok, reason, _ = gate_compose(unit((".travis.yml", TRAVIS_WITH_SERVICES)))
     assert not ok and reason == "unverified_compose"
+
+
+from stackslice.extract import with_retries
+
+
+def test_with_retries_succeeds_after_transient_failures():
+    calls = {"n": 0}
+    slept = []
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("Cannot send a request, as the client has been closed.")
+        return "ok"
+
+    assert with_retries(flaky, attempts=3, sleep=slept.append) == "ok"
+    assert calls["n"] == 3
+    assert len(slept) == 2, "should back off between attempts"
+
+
+def test_with_retries_reraises_after_exhausting_attempts():
+    def always_fails():
+        raise RuntimeError("nope")
+
+    try:
+        with_retries(always_fails, attempts=2, sleep=lambda _: None)
+    except RuntimeError as error:
+        assert str(error) == "nope"
+    else:
+        raise AssertionError("should have re-raised")
+
+
+def test_with_retries_does_not_sleep_on_first_success():
+    slept = []
+    assert with_retries(lambda: 42, sleep=slept.append) == 42
+    assert slept == []

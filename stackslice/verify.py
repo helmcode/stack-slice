@@ -28,7 +28,13 @@ def load_documents(content: str) -> list | None:
         return None
     try:
         return [doc for doc in yaml.safe_load_all(content)]
-    except (yaml.YAMLError, UnicodeDecodeError, ValueError, RecursionError):
+    except Exception:  # noqa: BLE001 - see below, YAMLError is not enough
+        # PyYAML does not confine its failures to YAMLError. An explicit
+        # `!!bool` tag carrying a non-boolean scalar (`flag: !!bool test`) raises
+        # a bare KeyError from construct_yaml_bool, and other malformed tags
+        # surface as TypeError or AttributeError. Since the only question here is
+        # "does this parse into usable YAML", any exception is a no. Letting one
+        # escape killed a whole shard mid-sweep.
         return None
 
 

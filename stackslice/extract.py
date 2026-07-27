@@ -347,7 +347,44 @@ def _unit_candidates(paths: list[str], resolved) -> dict[str, dict[str, list[int
     return candidates
 
 
+def _reset_http_session() -> None:
+    """Drop huggingface_hub's cached HTTP session for this process.
+
+    Long sweeps hit `Cannot send a request, as the client has been closed`: the
+    session is cached per process and a pooled worker can inherit a closed one.
+    Clearing the cache makes the next attempt build a fresh client.
+    """
+    try:
+        from huggingface_hub.utils import get_session
+
+        cache_clear = getattr(get_session, "cache_clear", None)
+        if cache_clear is not None:
+            cache_clear()
+    except Exception:  # noqa: BLE001 - best effort, never fail a sweep on this
+        pass
+
+
+def with_retries(operation, attempts: int = 3, delay: float = 2.0, sleep=time.sleep):
+    """Run `operation`, retrying transient failures with a fresh HTTP session."""
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return operation()
+        except Exception as error:  # noqa: BLE001 - any transport error is retryable
+            last_error = error
+            if attempt == attempts:
+                break
+            _reset_http_session()
+            sleep(delay * attempt)
+    raise last_error  # type: ignore[misc]
+
+
 def collect_shard(index: int, row_group_limit: int | None = None) -> dict:
+    """Extract one shard, retrying the whole read on transport failures."""
+    return with_retries(lambda: _collect_shard_once(index, row_group_limit))
+
+
+def _collect_shard_once(index: int, row_group_limit: int | None = None) -> dict:
     """Extract every passing unit from one shard.
 
     Returns serialisable results rather than writing, so the sweep can run in a
@@ -489,6 +526,11 @@ def main() -> None:
     completed = 0
 
     try:
+        # Do NOT set max_tasks_per_child here. It deadlocks: after every worker
+        # retires (workers * limit tasks, observed at exactly 300 with 12 workers
+        # and a limit of 25) the pool stops spawning replacements and the parent
+        # blocks forever in futex_wait_queue with no children left. Stale HTTP
+        # sessions are handled by with_retries instead.
         with ProcessPoolExecutor(max_workers=args.workers) as pool:
             futures = {
                 pool.submit(collect_shard, index, args.row_groups): index

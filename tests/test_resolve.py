@@ -5,6 +5,7 @@ import pytest
 from stackslice.resolve import Resolved, resolve_repo
 from stackslice.taxonomy import Precision
 from stackslice.verify import (
+    load_documents,
     top_level_keys,
     verify_ansible,
     verify_chart_metadata,
@@ -168,3 +169,30 @@ def test_arbiter_survives_junk():
 
 def test_top_level_keys_of_a_manifest():
     assert top_level_keys(K8S_DEPLOYMENT) == ["apiVersion", "kind", "metadata", "spec"]
+
+
+def test_arbiter_survives_pyyaml_non_yamlerror_failures():
+    """`!!bool test` makes PyYAML raise KeyError, not YAMLError.
+
+    Regression: this escaped load_documents and aborted an entire shard 4,278
+    shards into a corpus sweep.
+    """
+    hostile = "flag: !!bool test\n"
+    assert load_documents(hostile) is None
+    assert not verify_k8s_manifest(hostile)
+    assert not verify_github_workflow(hostile)
+    assert not verify_ansible(hostile)
+    assert not verify_compose(hostile)
+    assert not verify_chart_metadata(hostile)
+    assert top_level_keys(hostile) == []
+
+
+def test_arbiter_survives_other_malformed_tags():
+    for hostile in (
+        "a: !!int notanumber\n",
+        "b: !!float nope\n",
+        "c: !!timestamp whenever\n",
+        "d: !!binary not-base64!!\n",
+    ):
+        assert load_documents(hostile) is None, hostile
+        assert not verify_k8s_manifest(hostile)
