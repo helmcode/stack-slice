@@ -244,3 +244,25 @@ def test_with_retries_does_not_sleep_on_first_success():
     slept = []
     assert with_retries(lambda: 42, sleep=slept.append) == 42
     assert slept == []
+
+
+def test_run_output_paths_never_collide_between_runs(tmp_path):
+    """Two runs must not share a gzip file; appending is what caused the wound."""
+    import gzip
+
+    from stackslice.extract import run_output_path
+
+    first = run_output_path(str(tmp_path), "dockerfile", "20260727T120000")
+    second = run_output_path(str(tmp_path), "dockerfile", "20260727T130000")
+    assert first != second
+    assert first.endswith("dockerfile.20260727T120000.jsonl.gz")
+
+    # Exclusive creation makes reopening the same file impossible.
+    with gzip.open(first, "xt", encoding="utf-8") as handle:
+        handle.write("{}\n")
+    try:
+        gzip.open(first, "xt", encoding="utf-8")
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("mode x must refuse to reopen an existing output")

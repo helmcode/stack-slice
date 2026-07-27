@@ -43,7 +43,8 @@ def _refine_to_failing_byte(data: bytes, position: int, failing_chunk: int):
     if failing_chunk > position:
         output += decompressor.decompress(data[position:failing_chunk])
         if decompressor.eof:
-            return bytes(output), False, len(data) - len(decompressor.unused_data)
+            # `unused_data` counts only what was fed, never the whole file.
+            return bytes(output), False, failing_chunk - len(decompressor.unused_data)
 
     cursor = failing_chunk
     while cursor < len(data):
@@ -57,19 +58,24 @@ def _refine_to_failing_byte(data: bytes, position: int, failing_chunk: int):
     return bytes(output), True, cursor
 
 
-def _decompress_member(data: bytes, position: int):
+def _decompress_member(data: bytes, position: int, chunk: int = CHUNK):
     """Return (payload, truncated, consumed_offset) for the member at `position`."""
     decompressor = zlib.decompressobj(wbits=31)
     output = bytearray()
     cursor = position
     while cursor < len(data):
+        fed_end = min(cursor + chunk, len(data))
         try:
-            output += decompressor.decompress(data[cursor:cursor + CHUNK])
+            output += decompressor.decompress(data[cursor:fed_end])
         except zlib.error:
             return _refine_to_failing_byte(data, position, cursor)
         if decompressor.eof:
-            return bytes(output), False, len(data) - len(decompressor.unused_data)
-        cursor += CHUNK
+            # `unused_data` holds the tail of what was FED, not of the file, so
+            # the consumed offset is relative to fed_end. Using len(data) here
+            # pushed the resync point to the end of the file and silently hid
+            # every member after the first.
+            return bytes(output), False, fed_end - len(decompressor.unused_data)
+        cursor = fed_end
 
     # Input exhausted with no trailer: the file itself ends mid-member.
     try:
@@ -79,11 +85,11 @@ def _decompress_member(data: bytes, position: int):
     return bytes(output), True, len(data)
 
 
-def iter_member_payloads(data: bytes):
+def iter_member_payloads(data: bytes, chunk: int = CHUNK):
     """Yield (decompressed_bytes, member_offset, was_truncated) per member."""
     position = _next_magic(data, 0)
     while position != -1 and position < len(data):
-        payload, truncated, consumed = _decompress_member(data, position)
+        payload, truncated, consumed = _decompress_member(data, position, chunk)
         yield payload, position, truncated
         # Resync from where decompression stopped: for a wound, that is normally
         # the first byte of the next member's header, since reading that header

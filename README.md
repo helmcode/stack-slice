@@ -15,7 +15,12 @@ CI pipelines and Prometheus rules are all just `YAML` to go-enry.
 
 ## Status
 
-Phases 0 (sizing), 0.5 (content validation) and 1 (final labelling) are complete.
+Phases 0 (sizing), 0.5 (content validation), 1 (final labelling) and 2 (the
+full-corpus harvest) are complete. The whole of The Stack v3 was swept in 12h27m
+at 94 MB/s, yielding **13,367,187 quality-gated units** in 5.0 GB gzipped:
+4.6M Dockerfiles, 3.4M GitHub Actions workflows, 3.2M Compose files, 823k
+Terraform modules, 823k Kubernetes manifest sets, 445k Ansible roles and 65k
+complete Helm charts.
 See [FINDINGS.md](FINDINGS.md) for the numbers, including two findings about the
 dataset's license labels that affect what any derived artifact can claim.
 
@@ -64,6 +69,8 @@ No Hugging Face token is required; the dataset is public and ungated.
 | `stackslice/validate.py` | Content pass measuring the path heuristics |
 | `stackslice/measure.py` | Scores final labels against the parser, and characterises dropped YAML |
 | `tests/` | 84 tests over the classifier, detectors, resolver and arbiter |
+| `stackslice/extract.py` | Streaming sweep that emits quality-gated units as JSONL |
+| `stackslice/repair.py` | Recovers records from a gzip stream cut mid-member |
 | `probe_*.py` | One-off measurements backing FINDINGS.md |
 
 ## Design notes
@@ -74,6 +81,10 @@ No Hugging Face token is required; the dataset is public and ungated.
 - **Units over files.** A Helm chart is only useful when `Chart.yaml`,
   `values.yaml` and `templates/` travel together. Repository-level grouping in
   v3 is what makes that extractable.
+- **One output file per run.** Runs never share a gzip file. Appending is
+  tempting and nearly cost a 12-hour harvest: `GzipFile.flush()` leaves the
+  member unterminated, so a killed writer puts a wound in the file that stops
+  every standard reader on everything written after it.
 - **Sampling.** Shards are sampled evenly across the index range so no
   repository ordering inside the corpus can bias the result. Extrapolation
   corrects for both sampled shards and sampled row groups.

@@ -494,6 +494,11 @@ def _collect_shard_once(index: int, row_group_limit: int | None = None) -> dict:
         }
 
 
+def run_output_path(directory: str, unit_type: str, tag: str) -> str:
+    """Output path for one unit type in one run. Runs never share a file."""
+    return os.path.join(directory, f"{unit_type}.{tag}.jsonl.gz")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--shards", type=int, default=20, help="how many shards to sweep")
@@ -501,6 +506,11 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=8, help="parallel shard readers")
     parser.add_argument("--row-groups", type=int, default=None)
     parser.add_argument("--out", default="units", help="output directory")
+    parser.add_argument(
+        "--run-tag",
+        default=None,
+        help="output file suffix; defaults to a timestamp so runs never share a file",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -515,10 +525,18 @@ def main() -> None:
         i for i in sample_indices(args.shards + args.offset)[args.offset:]
         if i not in done
     ]
+    # One file per run, created exclusively. Appending is what made a killed
+    # writer catastrophic: GzipFile.flush() leaves the member unterminated, so
+    # the next run's append landed behind a wound that stops every standard
+    # reader, hiding 11.8M of 12.2M records until they were recovered with
+    # stackslice.repair. Mode "x" makes a second run physically unable to reopen
+    # an existing file, and resuming is already handled by state.json.
+    tag = args.run_tag or time.strftime("%Y%m%dT%H%M%S")
     writers = {
-        name: gzip.open(os.path.join(args.out, f"{name}.jsonl.gz"), "at", encoding="utf-8")
+        name: gzip.open(run_output_path(args.out, name, tag), "xt", encoding="utf-8")
         for name in GATES
     }
+    print(f"writing {len(writers)} files tagged {tag}", file=sys.stderr)
     stats: Counter = Counter()
     rejections = Rejections()
     total_bytes = 0

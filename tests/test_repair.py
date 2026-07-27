@@ -134,3 +134,26 @@ def test_empty_file_yields_nothing(tmp_path):
     result = repair_file(str(source), str(tmp_path / "h.repaired.jsonl.gz"))
     assert result["lines_recovered"] == 0
     assert list(iter_member_payloads(b"")) == []
+
+
+def test_consumed_offset_is_relative_to_what_was_fed(tmp_path):
+    """Regression: a small chunk size must not hide members after the first.
+
+    `unused_data` holds the tail of the bytes fed to the decompressor, not of the
+    whole file. Deriving the resync point from len(data) jumped straight to the
+    end of the file and lost 134 MB of a 150 MB output.
+    """
+    data = (
+        complete_member([record(f"m1-{i}") for i in range(50)])
+        + complete_member([record(f"m2-{i}") for i in range(50)])
+        + complete_member([record(f"m3-{i}") for i in range(50)])
+    )
+    # A chunk far smaller than the file forces multi-chunk feeding per member.
+    members = list(iter_member_payloads(data, chunk=64))
+    assert len(members) == 3, "every member must be walked, not just the first"
+    assert all(not truncated for _, _, truncated in members)
+
+    source = tmp_path / "chunked.jsonl.gz"
+    source.write_bytes(data)
+    result = repair_file(str(source), str(tmp_path / "chunked.repaired.jsonl.gz"))
+    assert result["lines_recovered"] == 150

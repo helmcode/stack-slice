@@ -392,6 +392,78 @@ Practical consequence: the drop decisions are sound. Nothing in this list belong
 in an IaC dataset, and the two families that come closest (OpenAPI specs and
 Conda environments) are already labelled separately rather than discarded blindly.
 
+## 10. Phase 2: the full-corpus harvest
+
+The whole corpus was swept on `nan-eu008`: **8,196 of 8,196 shards, 4.71 TB
+pulled in 12h27m at 94 MB/s**, across 157.9M repositories, 114,761 forks skipped.
+Nothing was stored but the output, because extraction streams shards over HTTP
+range requests. `~/.cache/huggingface` grew to 1.2 MB after 4 TB of transfer, and
+the host's free disk fell by 2 GB over the whole run.
+
+| Unit | Extracted | Gate pass rate |
+|---|---|---|
+| **dockerfile** | **4,611,725** | 96.9% |
+| **workflow** (GitHub Actions) | **3,384,907** | 98.4% |
+| **compose** | **3,213,543** | 97.2% |
+| **terraform_module** | **823,406** | 99.1% |
+| **manifest_set** (Kubernetes) | **823,369** | 98.6% |
+| **ansible_role** | **444,744** | 95.0% |
+| **helm_chart** | **65,493** | 69.0% |
+
+**13,367,187 units, 5.0 GB gzipped.** The 5%-sample projections held to within
+10% on every class, which retroactively validates the evenly spaced sampling.
+
+Rejections at scale show what the content gates buy, since none of these can be
+filtered by path alone: 130,812 files named `Dockerfile` with no valid `FROM`;
+85,376 non-Compose files matching Compose names (Travis, CodeBuild, Amplify and
+Read the Docs); 21,797 single-template Helm charts, which is why Helm has the
+lowest pass rate; 3,927 generated Dockerfiles; 478 unparseable `Chart.yaml`.
+
+### 10.1 Three failures worth recording
+
+**A deadlock I introduced.** `ProcessPoolExecutor(max_tasks_per_child=25)`, added
+as belt-and-braces against stale HTTP sessions, hangs once every worker has
+retired: at exactly `workers * limit` tasks (shard 300 with 12 workers) the pool
+stops spawning replacements and the parent blocks in `futex_wait_queue` with no
+children left. It failed silently, with no exception and no log line, so two
+status reports called it healthy while it had been stopped for 68 minutes. Log
+staleness, not log content, is what detects this. Retries in `with_retries` are
+the correct fix for stale sessions; `max_tasks_per_child` is now documented as
+forbidden.
+
+**PyYAML raises outside YAMLError.** An explicit `!!bool` tag with a non-boolean
+scalar (`flag: !!bool test`) raises a bare `KeyError` from
+`construct_yaml_bool`; other malformed tags raise `TypeError` or
+`AttributeError`. One such file aborted an entire shard. The arbiter now treats
+any exception as "does not parse".
+
+**Appending to gzip nearly cost the whole harvest.** `GzipFile.flush()` writes a
+zlib sync point but does not terminate the member: no CRC, no ISIZE trailer.
+Killing the deadlocked writer therefore left an unterminated member, and because
+each run appended a new member to the same file, later runs landed behind that
+wound. Every standard reader stops there, so `zcat` reported
+`invalid compressed data--format violated` and counted 384,404 Dockerfiles out of
+4.6M. The data was intact but unreachable.
+
+`stackslice/repair.py` walks members, salvages whatever each yields before it
+breaks (replaying byte at a time through the failing chunk, since zlib returns no
+partial output from a call that raises), then resyncs on the next gzip magic.
+Recovery was exact:
+
+| Source | Units |
+|---|---|
+| 5% sample sweep | 658,325 |
+| killed run, before the deadlock | 485,972 |
+| full-corpus run | 12,221,264 |
+| resume of the PyYAML shard | 1,626 |
+| **sum** | **13,367,187** |
+| **recovered by repair** | **13,367,187** |
+
+Zero duplicates, zero unparseable lines, all 8,196 shards present. Not even the
+record straddling the wound was lost. The root cause is now impossible: each run
+writes `{unit_type}.{tag}.jsonl.gz` with mode `x`, so no run can reopen another
+run's file.
+
 ## Reproducing
 
 ```bash
