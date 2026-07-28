@@ -169,3 +169,24 @@ def test_flags_are_attached_to_every_written_record(tmp_path):
             record = json.loads(line)
             assert "flags" in record
             assert record["flags"]["total_bytes"] > 0
+
+
+def test_harvest_repos_collects_distinct_repo_paths(tmp_path):
+    """The index only needs the repositories a harvest actually cites."""
+    from stackslice.finalize import harvest_repos
+
+    write_units(tmp_path / "dockerfile.jsonl.gz", [unit("a/one"), unit("a/one"), unit("b/two")])
+    write_units(tmp_path / "workflow.jsonl.gz", [unit("b/two", "workflow"), unit("c/three", "workflow")])
+    assert harvest_repos(str(tmp_path)) == {"a/one", "b/two", "c/three"}
+
+
+def test_harvest_repos_survives_bad_lines(tmp_path):
+    from stackslice.finalize import harvest_repos
+
+    path = tmp_path / "dockerfile.jsonl.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        handle.write(json.dumps(unit("good/one")) + "\n")
+        handle.write("{not json\n")
+        handle.write(json.dumps({"unit_type": "dockerfile"}) + "\n")
+        handle.write(json.dumps(unit("good/two")) + "\n")
+    assert harvest_repos(str(tmp_path)) == {"good/one", "good/two"}

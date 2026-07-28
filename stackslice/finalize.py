@@ -40,8 +40,40 @@ LATEST_TAG = re.compile(r"^\s*FROM\s+\S+:latest\b", re.MULTILINE | re.IGNORECASE
 UNPINNED_ACTION = re.compile(r"uses:\s*\S+@(?:v?\d+|main|master)\s*$", re.MULTILINE)
 
 
-def surviving_repos(revision: str, uuid: str, shards: int, workers: int = 12) -> set[str]:
-    """Read `repo_path` from every shard of a revision. Costs ~0.1% of the data."""
+def harvest_repos(directory: str) -> set[str]:
+    """Distinct `repo_path` values present in a harvest.
+
+    Passing this to `surviving_repos` as `only` is what keeps the index small: the
+    corpus has 172.8M repositories but a harvest references a few million, and
+    holding the full set costs ~34 GB of RAM and a 3.5 GB cache file for no gain.
+    """
+    repos: set[str] = set()
+    for path in sorted(glob.glob(os.path.join(directory, "*.jsonl.gz"))):
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    repos.add(json.loads(line)["repo_path"])
+                except (json.JSONDecodeError, KeyError):
+                    continue
+        print(f"  {os.path.basename(path)}: {len(repos):,} distinct repos so far",
+              file=sys.stderr, flush=True)
+    return repos
+
+
+def surviving_repos(
+    revision: str,
+    uuid: str,
+    shards: int,
+    workers: int = 12,
+    only: set[str] | None = None,
+) -> set[str]:
+    """Read `repo_path` from every shard of a revision. Costs ~0.1% of the data.
+
+    `only` restricts what is retained to repositories a harvest actually cites,
+    which is the difference between a 1.4 GB set and a 34 GB one.
+    """
     fs = HfFileSystem()
 
     def read(index: int) -> list[str]:
@@ -62,7 +94,8 @@ def surviving_repos(revision: str, uuid: str, shards: int, workers: int = 12) ->
         for future in as_completed(futures):
             index = futures[future]
             try:
-                repos.update(future.result())
+                names = future.result()
+                repos.update(names if only is None else (n for n in names if n in only))
             except Exception as error:  # noqa: BLE001 - report and continue
                 print(f"  shard {index:05d} FAILED: {error}", file=sys.stderr, flush=True)
                 continue
@@ -171,9 +204,20 @@ def main() -> None:
                 parser.error("--uuid is required when building the repo index")
             print(f"reading repo_path from {args.shards} shards of {args.revision}",
                   file=sys.stderr)
-            keep = surviving_repos(args.revision, args.uuid, args.shards, args.workers)
+            print("collecting the repositories this harvest cites", file=sys.stderr)
+            cited = harvest_repos(args.directory)
+            print(f"harvest cites {len(cited):,} distinct repos", file=sys.stderr)
+            keep = surviving_repos(
+                args.revision, args.uuid, args.shards, args.workers, only=cited
+            )
+            # Written line by line: joining 172.8M strings builds a multi-gigabyte
+            # string on top of an already large set.
             with open(args.repo_index, "w") as handle:
-                handle.write("\n".join(sorted(keep)))
+                for name in sorted(keep):
+                    handle.write(f"{name}\n")
+            gone = len(cited) - len(keep)
+            print(f"of the cited repos, {gone:,} are gone from {args.revision[:12]} "
+                  f"({100 * gone / max(len(cited), 1):.3f}%)", file=sys.stderr)
             print(f"wrote {len(keep):,} surviving repos to {args.repo_index}",
                   file=sys.stderr)
 
