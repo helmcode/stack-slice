@@ -33,6 +33,13 @@ from .taxonomy import (
 )
 
 REPO = "datasets/HuggingFaceCode/stack-v3-train"
+
+# Pinned snapshot. Upstream applies opt-out removals in place: on 2026-07-28 it
+# ran "Clear data before opt-out update" and re-uploaded the whole dataset under
+# a new file UUID, so `main` stops resolving the shards a sweep was reading. The
+# UUID and shard count below describe THIS revision and only this one. Old
+# revisions stay readable by SHA, which is what makes a harvest reproducible.
+REVISION = "de81e3ca7151"
 SHARD_UUID = "4beed122-1346-42f6-82eb-5757f2b6305f"
 TOTAL_SHARDS = 8196
 
@@ -61,8 +68,10 @@ PREFILTER = re.compile(
 )
 
 
-def shard_path(index: int) -> str:
-    return f"{REPO}/data/part-{index:05d}-{SHARD_UUID}-c000.snappy.parquet"
+def shard_path(index: int, revision: str = REVISION) -> str:
+    """Path to one shard, pinned to a revision so a sweep cannot shift under it."""
+    repo = f"{REPO}@{revision}" if revision else REPO
+    return f"{repo}/data/part-{index:05d}-{SHARD_UUID}-c000.snappy.parquet"
 
 
 def sample_indices(count: int) -> list[int]:

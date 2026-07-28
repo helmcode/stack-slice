@@ -11,12 +11,7 @@ from collections import defaultdict
 import pyarrow.parquet as pq
 from huggingface_hub import HfFileSystem
 
-REPO = "datasets/HuggingFaceCode/stack-v3-train"
-SHARD_UUID = "4beed122-1346-42f6-82eb-5757f2b6305f"
-
-
-def shard_path(index: int) -> str:
-    return f"{REPO}/data/part-{index:05d}-{SHARD_UUID}-c000.snappy.parquet"
+from stackslice.scan import shard_path  # pinned revision lives there
 
 
 def main() -> None:

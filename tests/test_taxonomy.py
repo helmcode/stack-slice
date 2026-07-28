@@ -131,3 +131,15 @@ def test_units_ignore_vendored_subcharts():
 def test_root_level_chart_is_found():
     units = detect_units(["Chart.yaml", "values.yaml", "templates/deployment.yaml"])
     assert units["helm_chart"] == [""]
+
+
+def test_shard_paths_are_pinned_to_a_revision():
+    """Upstream rewrites the dataset in place; an unpinned path breaks mid-sweep."""
+    from stackslice.scan import REVISION, shard_path
+
+    path = shard_path(0)
+    assert f"@{REVISION}" in path
+    assert path.endswith("part-00000-4beed122-1346-42f6-82eb-5757f2b6305f-c000.snappy.parquet")
+    assert shard_path(8195).count("part-08195") == 1
+    # An explicit empty revision still works, for reading whatever main holds.
+    assert "@" not in shard_path(0, revision="")

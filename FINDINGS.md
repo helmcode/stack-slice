@@ -464,6 +464,95 @@ record straddling the wound was lost. The root cause is now impossible: each run
 writes `{unit_type}.{tag}.jsonl.gz` with mode `x`, so no run can reopen another
 run's file.
 
+## 11. Quality of the harvest, and three things to fix before publishing
+
+Profiled by streaming all 13,367,187 units (`python -m stackslice.summary units_full`),
+with reservoir sampling for representative examples rather than heads of files.
+
+| Class | Units | Files/unit | KB/unit | `permissive` |
+|---|---|---|---|---|
+| helm_chart | 65,493 | 10.40 | 14.0 | 15.10% |
+| terraform_module | 823,406 | 5.31 | 7.0 | 6.90% |
+| manifest_set | 823,369 | 4.37 | 3.4 | 11.44% |
+| ansible_role | 444,744 | 3.81 | 3.5 | 6.74% |
+| workflow | 3,384,907 | 1.00 | 1.5 | 7.88% |
+| compose | 3,213,543 | 1.00 | 0.9 | 3.59% |
+| dockerfile | 4,611,725 | 1.00 | 0.6 | 5.14% |
+| **total** | **13,367,187** | 21,550,716 files | **22.40 GB** | |
+
+Substance checks (p50 / p90 / max):
+
+- **helm_chart**: 4 / 9 / 56 templates, 80.3% ship `values.yaml`
+- **terraform_module**: 3 / 8 / 60 `.tf` files, 67.5% declare variables, 45.6% outputs
+- **manifest_set**: 3 / 8 / 60 manifests. Top kinds: Deployment 388,868, Service
+  379,356, Kustomization 128,121, ConfigMap 117,936, Ingress 100,629
+- **dockerfile**: 8 / 17 / 2857 instructions, 20.3% multi-stage, 11.0% set `USER`,
+  1.4% declare `HEALTHCHECK`
+- **workflow**: 1 / 2 / 96 jobs, 5 / 12 / 270 steps, 10.5% set `permissions`
+- **compose**: 2 / 5 / 161 services, 32.6% mount volumes, 8.9% healthcheck
+
+Those last three lines are why this is worth publishing as a benchmark corpus:
+89% of Compose files have no healthcheck, 89% of Dockerfiles set no `USER`, and
+89.5% of workflows declare no `permissions`. That is a measurable baseline for
+what models trained on this data will imitate.
+
+### 11.1 The corpus repeats file rows inside a repository
+
+Sampling turned up a chart whose record listed `nginx-service.yaml` eleven times.
+It is upstream, not us. In shard 0 of the pinned revision:
+
+- **10.39% of repositories contain duplicate file paths**
+- **14.5% of all file rows are duplicates**
+- worst case: `LayerZero-Labs/LayerZero-v2` repeats
+  `packages/layerzero-v2/evm/protocol/contracts/MessageLibManager.sol` ten times,
+  with **one distinct `content_id`**, so it is byte-identical repetition
+
+A git tree cannot hold ten files at one path, so this is an artifact of the
+repository-grouping step. Consequence: unit file counts above are inflated by up
+to ~14.5%, and any published artifact must deduplicate files by (path, content)
+within each unit. No re-sweep is needed; it is a post-process.
+
+### 11.2 Roughly a quarter of Helm charts cannot render standalone
+
+Measured over all 65,493 charts:
+
+| | Share |
+|---|---|
+| contains any `.tpl` file | 35.3% |
+| references `include` or `template` | 63.1% |
+| contains a `define` anywhere | 36.8% |
+| **references a helper with no `define` present** | **27.1%** |
+| ships `NOTES.txt` | 10.8% |
+
+`.tpl` files do survive the corpus filters in general (0.0485% of files in shard
+0), so this is mostly charts depending on a parent chart's helpers rather than a
+wholesale filtering loss. Either way, `helm template` will fail on that 27.1%, so
+renderability must be a published flag and the executable benchmark should draw
+from the ~72.9% that are self-contained.
+
+### 11.3 Upstream rewrites the dataset in place, and it happened mid-project
+
+On **2026-07-28 between 08:52 and 09:28 UTC**, while this work was in progress,
+upstream applied opt-out removals in a series of commits including
+`Clear data before opt-out update`, deleted the data and began re-uploading it
+under a new file UUID (`50e95205-…` in place of `4beed122-…`). Mid-afternoon the
+new revision held 1,550 shards and 0.89 TB against the previous 8,196 and 4.71 TB,
+so the re-upload was still running.
+
+Two consequences:
+
+1. **Paths must be pinned to a revision.** An unpinned path stops resolving the
+   moment upstream republishes; `shard_path` now embeds
+   `REVISION = de81e3ca7151` (2026-07-24 18:36:04), the revision this harvest read.
+   Old revisions stay readable by SHA, so the harvest is reproducible and
+   re-verifiable.
+2. **The harvest predates those opt-out removals.** Publishing it as-is would
+   redistribute code from developers who have since asked to be removed, which
+   ODC-By and the dataset's own terms do not permit. Before publishing, every
+   unit must be re-filtered against the new revision by `repo_path`, which is a
+   metadata-only pass (1% of bytes) of exactly the kind Phase 0 established. That
+   re-filter has to be repeated on each upstream patch release.
+
 ## Reproducing
 
 ```bash
