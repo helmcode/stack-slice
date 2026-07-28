@@ -5,3 +5,8 @@ scan_stdout.txt
 scan_stderr.txt
 samples/
 validate_report.json
+*_stderr.txt
+*_stdout.txt
+profile.json
+quality_samples/
+units*/

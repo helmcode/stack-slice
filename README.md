@@ -91,6 +91,7 @@ No Hugging Face token is required; the dataset is public and ungated.
 
 ## Licensing
 
-Code in this repository is ours. The Stack v3 itself is ODC-By 1.0 and its
+Code in this repository is Apache-2.0 (see LICENSE). The Stack v3 itself is
+ODC-By 1.0 and its
 contents remain under their original licenses; see FINDINGS.md section 4 before
 assuming any subset is permissively licensed.
