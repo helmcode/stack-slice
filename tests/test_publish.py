@@ -21,7 +21,7 @@ def chart_record(name, self_contained=True, templates=3):
         "shard": 42,
         "license_types": ["no_license"],
         "quality": {"templates": templates, "templated_templates": templates,
-                    "has_values": True, "helpers": 1, "files": 3},
+                    "has_values": True, "helpers": 1, "files": 3},  # `files` is dropped
         "flags": {"file_count": 3, "total_bytes": 100, "all_permissive": False,
                   "self_contained": self_contained, "references_helpers": True,
                   "defines_helpers": self_contained},
@@ -133,3 +133,25 @@ def test_unparseable_lines_are_counted_not_fatal(tmp_path):
     result = convert(str(source), str(tmp_path / "ds"))
     assert result["rows"] == 2
     assert result["unparseable"] == 1
+
+
+def test_pre_dedup_file_counter_is_not_published():
+    """quality.files was counted before deduplication and contradicted
+    flags.file_count, so it must not reach the schema."""
+    for unit_type in CONFIG_FIELDS:
+        quality = schema_for(unit_type).field("quality").type
+        names = [quality.field(i).name for i in range(quality.num_fields)]
+        assert "files" not in names, f"{unit_type} still publishes quality.files"
+
+
+def test_file_count_comes_only_from_flags(tmp_path):
+    record = chart_record("a/b")
+    record["quality"]["files"] = 99      # stale, pre-dedup
+    record["flags"]["file_count"] = 2    # post-dedup truth
+    source = tmp_path / "helm_chart.jsonl.gz"
+    write(source, [record])
+    convert(str(source), str(tmp_path / "ds"))
+    row = pq.read_table(str(tmp_path / "ds" / "data" / "helm_chart")).to_pylist()[0]
+    assert row["flags"]["file_count"] == 2
+    assert "files" not in row["quality"]
+    assert len(row["files"]) == 2

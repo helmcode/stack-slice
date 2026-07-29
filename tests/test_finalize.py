@@ -140,12 +140,18 @@ def test_opted_out_repositories_are_dropped(tmp_path):
 
 
 def test_no_filter_keeps_everything_but_still_dedupes(tmp_path):
+    """A duplicated template is removed while the chart itself survives."""
     source = tmp_path / "helm_chart.jsonl.gz"
-    duplicated = [
+    files = [
         {"path": "Chart.yaml", "content": "name: api\nversion: 1.0.0\n"},
-        {"path": "Chart.yaml", "content": "name: api\nversion: 1.0.0\n"},
+        {"path": "values.yaml", "content": "replicas: 1\n"},
+        {"path": "templates/a.yaml", "content": "kind: Service\n{{ .Values.x }}\n"},
+        {"path": "templates/a.yaml", "content": "kind: Service\n{{ .Values.x }}\n"},
+        {"path": "templates/b.yaml", "content": "kind: Ingress\n{{ .Values.y }}\n"},
     ]
-    write_units(source, [unit("a/b", "helm_chart", files=duplicated)])
+    record = unit("a/b", "helm_chart", files=files)
+    record["unit_prefix"] = ""
+    write_units(source, [record])
     destination = tmp_path / "out.jsonl.gz"
 
     result = finalize_file(str(source), str(destination), keep=None)
@@ -154,9 +160,10 @@ def test_no_filter_keeps_everything_but_still_dedupes(tmp_path):
     assert "dropped_opted_out" not in result
 
     with gzip.open(destination, "rt") as handle:
-        record = json.loads(handle.readline())
-    assert len(record["files"]) == 1
-    assert record["flags"]["file_count"] == 1
+        stored = json.loads(handle.readline())
+    assert len(stored["files"]) == 4
+    assert stored["flags"]["file_count"] == 4
+    assert stored["quality"]["templates"] == 2, "the duplicate must not be counted"
 
 
 def test_flags_are_attached_to_every_written_record(tmp_path):
@@ -190,3 +197,58 @@ def test_harvest_repos_survives_bad_lines(tmp_path):
         handle.write(json.dumps({"unit_type": "dockerfile"}) + "\n")
         handle.write(json.dumps(unit("good/two")) + "\n")
     assert harvest_repos(str(tmp_path)) == {"good/one", "good/two"}
+
+
+def test_regate_corrects_counters_inflated_by_duplicates():
+    """Three identical templates are one template, not three."""
+    from stackslice.finalize import regate
+
+    record = {
+        "unit_type": "helm_chart",
+        "unit_prefix": "charts/api",
+        "quality": {"templates": 3, "files": 5},
+        "files": [
+            {"path": "charts/api/Chart.yaml", "content": "name: api\nversion: 1.0.0\n"},
+            {"path": "charts/api/values.yaml", "content": "replicas: 1\n"},
+            {"path": "charts/api/templates/a.yaml", "content": "kind: Service\n{{ .Values.x }}\n"},
+            {"path": "charts/api/templates/b.yaml", "content": "kind: Ingress\n{{ .Values.y }}\n"},
+        ],
+    }
+    passed, reason, quality = regate(record)
+    assert passed, reason
+    assert quality["templates"] == 2, "must count the files actually present"
+
+
+def test_regate_drops_a_unit_that_only_passed_thanks_to_duplicates(tmp_path):
+    """A chart whose templates were all the same file is not a two-template chart."""
+    duplicated = [
+        {"path": "c/Chart.yaml", "content": "name: api\nversion: 1.0.0\n"},
+        {"path": "c/values.yaml", "content": "x: 1\n"},
+        {"path": "c/templates/only.yaml", "content": "kind: Service\n{{ .Values.x }}\n"},
+        {"path": "c/templates/only.yaml", "content": "kind: Service\n{{ .Values.x }}\n"},
+    ]
+    source = tmp_path / "helm_chart.jsonl.gz"
+    record = unit("a/b", "helm_chart", files=duplicated)
+    record["unit_prefix"] = "c"
+    write_units(source, [record])
+
+    result = finalize_file(str(source), str(tmp_path / "out.jsonl.gz"), keep=None)
+    assert result.get("written", 0) == 0
+    assert result["regated_out"] == 1
+    assert result["regated/too_few_templates"] == 1
+
+
+def test_single_file_units_survive_regating(tmp_path):
+    """Their unit_prefix is the file path itself, which must still resolve."""
+    from stackslice.finalize import regate, unit_relative
+
+    assert unit_relative("build/Dockerfile", "build/Dockerfile") == "Dockerfile"
+    record = {
+        "unit_type": "dockerfile",
+        "unit_prefix": "build/Dockerfile",
+        "quality": {},
+        "files": [{"path": "build/Dockerfile", "content": "FROM alpine\nRUN true\n"}],
+    }
+    passed, reason, quality = regate(record)
+    assert passed, reason
+    assert quality["stages"] == 1

@@ -51,44 +51,48 @@ BOOL, INT, STRINGS = pa.bool_(), pa.int32(), pa.list_(pa.string())
 
 # Per-config quality and flag fields, declared so the schema never depends on
 # which records happen to appear first.
+# `quality.files` is deliberately absent: it was counted at extraction time, before
+# deduplication removed 2.17M repeated rows, so it disagreed with the post-dedup
+# `flags.file_count`. Two fields claiming to count the same thing and differing is
+# worse than one field.
 CONFIG_FIELDS: dict[str, dict[str, list[tuple[str, pa.DataType]]]] = {
     "helm_chart": {
         "quality": [("templates", INT), ("templated_templates", INT),
-                    ("has_values", BOOL), ("helpers", INT), ("files", INT)],
+                    ("has_values", BOOL), ("helpers", INT)],
         "flags": [("file_count", INT), ("total_bytes", INT), ("all_permissive", BOOL),
                   ("self_contained", BOOL), ("references_helpers", BOOL),
                   ("defines_helpers", BOOL)],
     },
     "terraform_module": {
         "quality": [("tf_files", INT), ("declaring", INT), ("has_variables", BOOL),
-                    ("has_outputs", BOOL), ("files", INT)],
+                    ("has_outputs", BOOL)],
         "flags": [("file_count", INT), ("total_bytes", INT), ("all_permissive", BOOL)],
     },
     "manifest_set": {
-        "quality": [("manifests", INT), ("kinds", STRINGS), ("files", INT)],
+        "quality": [("manifests", INT), ("kinds", STRINGS)],
         "flags": [("file_count", INT), ("total_bytes", INT), ("all_permissive", BOOL)],
     },
     "ansible_role": {
         "quality": [("task_files", INT), ("has_defaults", BOOL), ("has_handlers", BOOL),
-                    ("has_templates", BOOL), ("files", INT)],
+                    ("has_templates", BOOL)],
         "flags": [("file_count", INT), ("total_bytes", INT), ("all_permissive", BOOL)],
     },
     "dockerfile": {
         "quality": [("stages", INT), ("multi_stage", BOOL), ("instructions", INT),
-                    ("has_user", BOOL), ("has_healthcheck", BOOL), ("files", INT)],
+                    ("has_user", BOOL), ("has_healthcheck", BOOL)],
         "flags": [("file_count", INT), ("total_bytes", INT), ("all_permissive", BOOL),
                   ("pins_digest", BOOL), ("uses_latest_tag", BOOL)],
     },
     "workflow": {
         "quality": [("jobs", INT), ("steps", INT), ("uses_actions", INT),
-                    ("triggers", STRINGS), ("has_permissions", BOOL), ("files", INT)],
+                    ("triggers", STRINGS), ("has_permissions", BOOL)],
         "flags": [("file_count", INT), ("total_bytes", INT), ("all_permissive", BOOL),
                   ("has_unpinned_action", BOOL)],
     },
     "compose": {
         "quality": [("services", INT), ("built_services", INT),
                     ("image_only_services", INT), ("has_healthcheck", BOOL),
-                    ("has_volumes", BOOL), ("has_networks", BOOL), ("files", INT)],
+                    ("has_volumes", BOOL), ("has_networks", BOOL)],
         "flags": [("file_count", INT), ("total_bytes", INT), ("all_permissive", BOOL)],
     },
 }

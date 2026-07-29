@@ -63,14 +63,85 @@ amount of content inspection can tell you what it belongs to.
 
 {{CONFIGS_TABLE}}
 
+### What is inside each one
+
+- **`helm_chart`** the scarcest and richest class. `Chart.yaml`, `values.yaml`
+  where present, every template and helper. Median 4 templates, up to 56.
+- **`terraform_module`** a directory of two or more `.tf` files that declare real
+  resources, modules, variables or outputs. Median 3 files. 67.5% declare
+  variables, 45.6% outputs.
+- **`manifest_set`** a directory of two or more Kubernetes manifests that parse.
+  Median 3. Most common kinds: Deployment, Service, Kustomization, ConfigMap,
+  Ingress, PersistentVolumeClaim, Secret.
+- **`ansible_role`** `tasks/`, and whichever of `defaults/`, `handlers/`, `vars/`,
+  `meta/`, `templates/`, `files/` the role ships. 24.6% carry defaults.
+- **`dockerfile`** one file with real instructions. Median 8 instructions,
+  20.3% multi-stage.
+- **`workflow`** one GitHub Actions workflow with triggers and jobs. Median 1 job
+  and 5 steps.
+- **`compose`** one Compose file with a services mapping. Median 2 services.
+
+### Using it
+
 ```python
 from datasets import load_dataset
 
 charts = load_dataset("Helmcode/stack-v3-devops", "helm_chart", split="train")
+```
 
-# Charts that render standalone, which is what an executable benchmark needs
+Charts that render standalone, which is what an executable benchmark needs:
+
+```python
 renderable = charts.filter(lambda row: row["flags"]["self_contained"])
 ```
+
+Stream the large configs instead of downloading them:
+
+```python
+dockerfiles = load_dataset(
+    "Helmcode/stack-v3-devops", "dockerfile", split="train", streaming=True
+)
+hardened = (row for row in dockerfiles if row["flags"]["pins_digest"])
+```
+
+Reconstruct a unit as files on disk, which is how you feed it to `helm lint`,
+`terraform validate` or `hadolint`:
+
+```python
+import pathlib
+
+def materialise(row, root):
+    prefix = row["unit_prefix"]
+    for entry in row["files"]:
+        relative = entry["path"][len(prefix):].lstrip("/") if prefix else entry["path"]
+        target = pathlib.Path(root, relative or pathlib.Path(entry["path"]).name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(entry["content"])
+
+materialise(charts[0], "/tmp/chart")
+```
+
+Restrict to units whose every file carries a permissive license header, but read
+the licensing section first, because that is not the same as permissively
+licensed code:
+
+```python
+permissive = charts.filter(lambda row: row["flags"]["all_permissive"])
+```
+
+### What it is good for
+
+- **Evaluation.** Complete, self-contained units are what an executable benchmark
+  needs: render the chart, validate the module, lint the Dockerfile, and score on
+  whether real tools accept the output.
+- **Fine-tuning on infrastructure tasks**, where the unit boundary matters more
+  than the file: a model that writes one template without `values.yaml` has not
+  written a chart.
+- **Measuring practice.** The flags make questions like "what share of public
+  Dockerfiles run as root" answerable in one pass instead of a research project.
+
+It is **not** a pretraining corpus. 5.4 GB is small, and the classes are
+deliberately unbalanced towards what exists rather than what would balance nicely.
 
 ## Schema
 
@@ -183,6 +254,41 @@ process; we re-filter on each upstream patch release.
   deployment boundary.
 - Stars are as of the crawl and 58-76% of units come from repositories with none.
   Popularity was deliberately not used as a gate; see the card's reasoning above.
+
+## Updates and versioning
+
+Upstream applies opt-out removals in place and re-uploads the whole dataset, which
+means the source moves. This dataset therefore records both the revision it was
+extracted from and the revision it was last compliance-filtered against, and both
+appear above. When upstream ships a patch release we re-filter and push a new
+version; the extraction itself is not repeated unless the tooling changes.
+
+If you need byte-for-byte reproducibility, pin the dataset revision you loaded.
+
+## Reproducing this dataset
+
+Everything here was produced by [helmcode/stack-slice](https://github.com/helmcode/stack-slice):
+
+```bash
+# Survey the corpus for 179 MB of transfer, no download
+python -m stackslice.scan --shards 24
+
+# Score the classifier against an independent YAML parser
+python -m stackslice.measure --shards 3
+
+# Sweep and extract units (streams shards, stores nothing but output)
+python -m stackslice.extract --shards 8196 --workers 12 --out units
+
+# Re-filter for opt-out, deduplicate, add flags
+python -m stackslice.finalize units --out units_final \
+    --revision <target-revision> --uuid <shard-uuid>
+
+# Convert to parquet, one config per class
+python -m stackslice.publish units_final --out dataset
+```
+
+The full measurement record, including the findings quoted in this card, is in
+[FINDINGS.md](https://github.com/helmcode/stack-slice/blob/main/FINDINGS.md).
 
 ## Citation
 

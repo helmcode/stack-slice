@@ -31,6 +31,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pyarrow.parquet as pq
 from huggingface_hub import HfFileSystem
 
+from .extract import GATES
 from .scan import CountingReader, REPO
 
 INCLUDE_CALL = re.compile(r"\{\{-?\s*(include|template)\s+\"")
@@ -106,6 +107,37 @@ def surviving_repos(
     return repos
 
 
+def unit_relative(path: str, prefix: str) -> str:
+    """Path of a file relative to its unit, as the extraction gates expect it."""
+    if prefix and path.startswith(f"{prefix}/"):
+        return path[len(prefix) + 1:]
+    if prefix and path == prefix:
+        # Single-file units use the file's own path as the unit prefix.
+        return os.path.basename(path)
+    return path
+
+
+def regate(record: dict) -> tuple[bool, str, dict]:
+    """Re-run a unit's gate over its deduplicated files.
+
+    The quality counters were computed at extraction time, before deduplication,
+    so `templates`, `tf_files`, `manifests` and `task_files` counted the corpus's
+    repeated rows: a chart whose three templates are the same file reported three.
+    Re-gating both corrects the counters and drops units that only met the gate by
+    virtue of that repetition.
+    """
+    unit_type = record.get("unit_type")
+    gate = GATES.get(unit_type)
+    if gate is None:
+        return True, "", record.get("quality") or {}
+    prefix = record.get("unit_prefix") or ""
+    files = [
+        {**entry, "relative": unit_relative(entry.get("path") or "", prefix)}
+        for entry in record.get("files") or []
+    ]
+    return gate(files)
+
+
 def dedupe_files(files: list[dict]) -> tuple[list[dict], int]:
     """Drop repeated (path, content) rows, preserving order."""
     seen: set[tuple[str, int]] = set()
@@ -170,6 +202,14 @@ def finalize_file(source: str, destination: str, keep: set[str] | None) -> dict:
                 stats["units_with_duplicates"] += 1
                 stats["duplicate_files_removed"] += removed
             record["files"] = files
+
+            passed, reason, quality = regate(record)
+            if not passed:
+                stats["regated_out"] += 1
+                stats[f"regated/{reason}"] += 1
+                continue
+            quality.pop("files", None)  # superseded by flags.file_count
+            record["quality"] = quality
             record["flags"] = derived_flags(record)
             if record["flags"].get("self_contained") is False:
                 stats["charts_not_self_contained"] += 1
