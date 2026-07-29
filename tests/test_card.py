@@ -22,7 +22,8 @@ PUBLISH = {
 
 
 def values():
-    return build_values(FINALIZE, PUBLISH, "de81e3ca7151", "d7bc7991ea32")
+    return build_values(FINALIZE, PUBLISH, "de81e3ca7151", "d7bc7991ea32",
+                        "2026-07-28", "2b4797afd567")
 
 
 def test_scarce_configs_are_listed_first():
@@ -49,6 +50,14 @@ def test_revisions_are_passed_through():
     result = values()
     assert result["SOURCE_REVISION"] == "de81e3ca7151"
     assert result["FILTER_REVISION"] == "d7bc7991ea32"
+
+
+def test_filter_date_and_verified_head_are_recorded():
+    """Upstream squashed the filter revision away within a day of us using it,
+    so the date and a re-verified HEAD are what make the claim checkable."""
+    result = values()
+    assert result["FILTER_DATE"] == "2026-07-28"
+    assert result["VERIFIED_HEAD"] == "2b4797afd567"
 
 
 def test_configs_table_has_a_row_per_config_and_a_total():
@@ -87,7 +96,7 @@ def test_missing_optional_counters_do_not_crash():
     finalize = [{"source": "compose.jsonl.gz", "read": 10, "written": 10}]
     publish = {"rows": 10, "bytes": 1, "configs": [
         {"config": "compose", "rows": 10, "files": 1, "bytes": 1}]}
-    result = build_values(finalize, publish, "a", "b")
+    result = build_values(finalize, publish, "a", "b", "2026-07-28", "c")
     assert result["OPTED_OUT"] == "0"
     assert result["DUPLICATE_FILES"] == "0"
     assert result["CHART_NOT_SELF_CONTAINED_PCT"] == "0.0%"

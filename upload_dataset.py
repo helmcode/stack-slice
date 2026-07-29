@@ -25,6 +25,9 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--public", action="store_true",
                         help="flip an existing repo to public; does not upload")
+    parser.add_argument("--card-only", action="store_true",
+                        help="upload just the dataset card, leaving the data alone")
+    parser.add_argument("--message", default="Update dataset card")
     args = parser.parse_args()
 
     token = sys.stdin.read().strip()
@@ -43,6 +46,21 @@ def main() -> None:
     readme = os.path.join(args.folder, "README.md")
     if not os.path.isfile(readme):
         raise SystemExit(f"missing dataset card at {readme}")
+
+    if args.card_only:
+        with open(readme) as handle:
+            if "{{" in handle.read():
+                raise SystemExit("card still has unrendered placeholders")
+        api.upload_file(
+            path_or_fileobj=readme,
+            path_in_repo="README.md",
+            repo_id=args.repo,
+            repo_type="dataset",
+            commit_message=args.message,
+        )
+        print(f"card updated: https://huggingface.co/datasets/{args.repo}")
+        return
+
     parquet = [
         os.path.join(root, name)
         for root, _, names in os.walk(os.path.join(args.folder, "data"))

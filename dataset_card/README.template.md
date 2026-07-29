@@ -197,8 +197,9 @@ without ever storing one.
 - Source revision: **`{{SOURCE_REVISION}}`** of `HuggingFaceCode/stack-v3-train`
 - Shards swept: **8,196 of 8,196**, covering 157.9M repositories
 - Forks skipped, so units come from the repository that authored them
-- Re-filtered for opt-out against revision **`{{FILTER_REVISION}}`**
-  (see Licensing)
+- Re-filtered for opt-out on **{{FILTER_DATE}}**, against the revision then at
+  HEAD (`{{FILTER_REVISION}}`), and verified equivalent to the current HEAD
+  `{{VERIFIED_HEAD}}` (see Licensing)
 
 Gates are content-based, never popularity-based: a chart must have parseable
 metadata, two or more templates and actual templating; a Terraform module must
@@ -232,8 +233,14 @@ repositories in a sample shard ship one. A provably permissive subset needs
 external enrichment keyed on `repo_path`.
 
 **Opt-out.** Upstream applies opt-out removals in place and re-uploads. This
-dataset was re-filtered by `repo_path` against `{{FILTER_REVISION}}`, dropping
-{{OPTED_OUT}} units whose repositories had been removed. If you find your code
+dataset was re-filtered by `repo_path` on {{FILTER_DATE}}, dropping
+{{OPTED_OUT}} units whose repositories had been removed.
+
+Be aware that **upstream rewrites its own history**: the revision we filtered
+against (`{{FILTER_REVISION}}`) was squashed away within a day, so source SHAs are
+not durable references. We therefore record the filter date alongside the SHA, and
+re-verify against the current HEAD (`{{VERIFIED_HEAD}}`) rather than assuming an
+old SHA still resolves. If you find your code
 here, use the
 [Am I in The Stack?](https://huggingface.co/spaces/bigcode/in-the-stack) opt-out
 process; we re-filter on each upstream patch release.
@@ -261,8 +268,9 @@ process; we re-filter on each upstream patch release.
 
 ## Updates and versioning
 
-Upstream applies opt-out removals in place and re-uploads the whole dataset, which
-means the source moves. This dataset therefore records both the revision it was
+Upstream applies opt-out removals in place, re-uploads the whole dataset and
+squashes its history, which means the source moves and old revision SHAs stop
+resolving. This dataset therefore records both the revision it was
 extracted from and the revision it was last compliance-filtered against, and both
 appear above. When upstream ships a patch release we re-filter and push a new
 version; the extraction itself is not repeated unless the tooling changes.

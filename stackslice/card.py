@@ -70,6 +70,8 @@ def build_values(
     publish_stats: dict,
     source_revision: str,
     filter_revision: str,
+    filter_date: str,
+    verified_head: str,
 ) -> dict[str, str]:
     configs = ordered(publish_stats["configs"])
     by_source = {s["source"].split(".")[0]: s for s in finalize_stats}
@@ -90,6 +92,8 @@ def build_values(
         "TOTAL_UNITS": f"{publish_stats['rows']:,}",
         "SOURCE_REVISION": source_revision,
         "FILTER_REVISION": filter_revision,
+        "FILTER_DATE": filter_date,
+        "VERIFIED_HEAD": verified_head,
         "OPTED_OUT": f"{sum(s.get('dropped_opted_out', 0) for s in finalize_stats):,}",
         "DUPLICATE_FILES": f"{sum(s.get('duplicate_files_removed', 0) for s in finalize_stats):,}",
         "DROPPED_AFTER_DEDUP": f"{sum(s.get('dropped_after_dedup', 0) for s in finalize_stats):,}",
@@ -117,6 +121,10 @@ def main() -> None:
     parser.add_argument("--publish-stats", required=True)
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--filter-revision", required=True)
+    parser.add_argument("--filter-date", required=True,
+                        help="upstream squashes history, so the date outlives the SHA")
+    parser.add_argument("--verified-head", required=True,
+                        help="HEAD the filtered result was re-verified against")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
@@ -128,7 +136,8 @@ def main() -> None:
         publish_stats = json.load(handle)
 
     values = build_values(
-        finalize_stats, publish_stats, args.source_revision, args.filter_revision
+        finalize_stats, publish_stats, args.source_revision, args.filter_revision,
+        args.filter_date, args.verified_head
     )
     with open(args.out, "w") as handle:
         handle.write(render(template, values))
