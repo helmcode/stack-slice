@@ -92,6 +92,7 @@ def build_values(
         "FILTER_REVISION": filter_revision,
         "OPTED_OUT": f"{sum(s.get('dropped_opted_out', 0) for s in finalize_stats):,}",
         "DUPLICATE_FILES": f"{sum(s.get('duplicate_files_removed', 0) for s in finalize_stats):,}",
+        "DROPPED_AFTER_DEDUP": f"{sum(s.get('dropped_after_dedup', 0) for s in finalize_stats):,}",
         "CHART_SELF_CONTAINED_PCT": f"{100 - broken_pct:.1f}%",
         "CHART_NOT_SELF_CONTAINED_PCT": f"{broken_pct:.1f}%",
     }

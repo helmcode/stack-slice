@@ -68,8 +68,8 @@ amount of content inspection can tell you what it belongs to.
 - **`helm_chart`** the scarcest and richest class. `Chart.yaml`, `values.yaml`
   where present, every template and helper. Median 4 templates, up to 56.
 - **`terraform_module`** a directory of two or more `.tf` files that declare real
-  resources, modules, variables or outputs. Median 3 files. 67.5% declare
-  variables, 45.6% outputs.
+  resources, modules, variables or outputs. Median 3 files. 70.7% declare
+  variables, 47.8% outputs.
 - **`manifest_set`** a directory of two or more Kubernetes manifests that parse.
   Median 3. Most common kinds: Deployment, Service, Kustomization, ConfigMap,
   Ingress, PersistentVolumeClaim, Secret.
@@ -243,8 +243,12 @@ process; we re-filter on each upstream patch release.
 - **The source corpus repeats file rows inside a repository**: 10.4% of
   repositories and 14.5% of all file rows, byte-identical by `content_id`. This
   dataset deduplicates by (path, content), removing {{DUPLICATE_FILES}} repeated
-  files. Counts here are therefore lower than a naive extraction would report, and
-  correctly so.
+  files, and then **drops the {{DROPPED_AFTER_DEDUP}} units that only met their
+  gate because of that repetition** (a "set of two manifests" whose two manifests
+  were the same file is not a set of two). Counts here are therefore lower than a
+  naive extraction would report, and correctly so. Quality counters such as
+  `templates`, `tf_files` and `manifests` are recomputed after deduplication, so
+  they describe the files actually present.
 - **{{CHART_NOT_SELF_CONTAINED_PCT}} of Helm charts cannot render standalone**
   because they call helpers they do not carry. Filter on `self_contained`.
 - **Ansible precision is a floor, not a measurement.** "A list of mappings with

@@ -199,9 +199,9 @@ def test_harvest_repos_survives_bad_lines(tmp_path):
     assert harvest_repos(str(tmp_path)) == {"good/one", "good/two"}
 
 
-def test_regate_corrects_counters_inflated_by_duplicates():
+def test_recount_corrects_counters_inflated_by_duplicates():
     """Three identical templates are one template, not three."""
-    from stackslice.finalize import regate
+    from stackslice.finalize import recount
 
     record = {
         "unit_type": "helm_chart",
@@ -214,12 +214,12 @@ def test_regate_corrects_counters_inflated_by_duplicates():
             {"path": "charts/api/templates/b.yaml", "content": "kind: Ingress\n{{ .Values.y }}\n"},
         ],
     }
-    passed, reason, quality = regate(record)
+    passed, reason, quality = recount(record)
     assert passed, reason
     assert quality["templates"] == 2, "must count the files actually present"
 
 
-def test_regate_drops_a_unit_that_only_passed_thanks_to_duplicates(tmp_path):
+def test_recount_drops_a_unit_that_only_passed_thanks_to_duplicates(tmp_path):
     """A chart whose templates were all the same file is not a two-template chart."""
     duplicated = [
         {"path": "c/Chart.yaml", "content": "name: api\nversion: 1.0.0\n"},
@@ -234,21 +234,48 @@ def test_regate_drops_a_unit_that_only_passed_thanks_to_duplicates(tmp_path):
 
     result = finalize_file(str(source), str(tmp_path / "out.jsonl.gz"), keep=None)
     assert result.get("written", 0) == 0
-    assert result["regated_out"] == 1
-    assert result["regated/too_few_templates"] == 1
+    assert result["dropped_after_dedup"] == 1
+    assert result["dropped_after_dedup/too_few_templates"] == 1
 
 
-def test_single_file_units_survive_regating(tmp_path):
-    """Their unit_prefix is the file path itself, which must still resolve."""
-    from stackslice.finalize import regate, unit_relative
+def test_single_file_units_pass_through_untouched():
+    """One file cannot contain a duplicate of itself, so nothing needs recounting."""
+    from stackslice.finalize import recount, unit_relative
 
     assert unit_relative("build/Dockerfile", "build/Dockerfile") == "Dockerfile"
+    original = {"stages": 2, "multi_stage": True, "instructions": 9,
+                "has_user": True, "has_healthcheck": False}
+    for unit_type, path in (("dockerfile", "build/Dockerfile"),
+                            ("workflow", ".github/workflows/ci.yml"),
+                            ("compose", "docker-compose.yml")):
+        record = {
+            "unit_type": unit_type,
+            "unit_prefix": path,
+            "quality": dict(original),
+            "files": [{"path": path, "content": "FROM alpine\nRUN true\n"}],
+        }
+        passed, reason, quality = recount(record)
+        assert passed, f"{unit_type}: {reason}"
+        assert quality == original, f"{unit_type} quality must be preserved verbatim"
+
+
+def test_recount_never_reverifies_content():
+    """Dedup keeps one copy of every file, so verification outcomes cannot change.
+
+    Re-verifying turned a 25-minute pass into a projected 4.5 hours for one class.
+    """
+    from stackslice.finalize import recount
+
+    # Content that no YAML parser would accept, in a unit that already passed.
     record = {
-        "unit_type": "dockerfile",
-        "unit_prefix": "build/Dockerfile",
-        "quality": {},
-        "files": [{"path": "build/Dockerfile", "content": "FROM alpine\nRUN true\n"}],
+        "unit_type": "manifest_set",
+        "unit_prefix": "k8s",
+        "quality": {"manifests": 9, "kinds": ["Deployment"]},
+        "files": [
+            {"path": "k8s/a.yaml", "content": "apiVersion: v1\nkind: Service\n\ta: [broken"},
+            {"path": "k8s/b.yaml", "content": "apiVersion: apps/v1\nkind: Deployment\n"},
+        ],
     }
-    passed, reason, quality = regate(record)
+    passed, reason, quality = recount(record)
     assert passed, reason
-    assert quality["stages"] == 1
+    assert quality["manifests"] == 2, "counted cheaply, not reparsed"

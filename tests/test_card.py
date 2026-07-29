@@ -7,7 +7,7 @@ from stackslice.card import build_values, configs_table, ordered, render
 FINALIZE = [
     {"source": "helm_chart.jsonl.gz", "read": 100, "written": 96,
      "dropped_opted_out": 4, "duplicate_files_removed": 30,
-     "charts_not_self_contained": 24},
+     "dropped_after_dedup": 7, "charts_not_self_contained": 24},
     {"source": "dockerfile.jsonl.gz", "read": 500, "written": 495,
      "dropped_opted_out": 5, "duplicate_files_removed": 70},
 ]
@@ -35,6 +35,7 @@ def test_totals_come_from_the_stats_not_prose():
     assert result["TOTAL_UNITS"] == "591"
     assert result["OPTED_OUT"] == "9"
     assert result["DUPLICATE_FILES"] == "100"
+    assert result["DROPPED_AFTER_DEDUP"] == "7"
 
 
 def test_self_contained_share_is_derived_from_chart_rows():
