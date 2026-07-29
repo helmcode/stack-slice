@@ -13,6 +13,12 @@ The first target slice is infrastructure-as-code, because language detection
 alone cannot find it: Helm templates, Kubernetes manifests, Ansible playbooks,
 CI pipelines and Prometheus rules are all just `YAML` to go-enry.
 
+## Published
+
+The corpus this produces is live at
+**[Helmcode/stack-v3-devops](https://huggingface.co/datasets/Helmcode/stack-v3-devops)**:
+13,234,862 quality-gated infrastructure units in seven configs, 5.40 GB of parquet.
+
 ## Status
 
 Phases 0 (sizing), 0.5 (content validation), 1 (final labelling) and 2 (the
