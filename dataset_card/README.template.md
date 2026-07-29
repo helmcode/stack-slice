@@ -241,9 +241,11 @@ against (`{{FILTER_REVISION}}`) was squashed away within a day, so source SHAs a
 not durable references. We therefore record the filter date alongside the SHA, and
 re-verify against the current HEAD (`{{VERIFIED_HEAD}}`) rather than assuming an
 old SHA still resolves. If you find your code
-here, use the
-[Am I in The Stack?](https://huggingface.co/spaces/bigcode/in-the-stack) opt-out
-process; we re-filter on each upstream patch release.
+here, check inclusion in the source corpus with the
+[Am I in The Stack?](https://huggingface.co/spaces/HuggingFaceCode/in-the-stack)
+Space and submit a removal request following the
+[opt-out instructions](https://github.com/bigcode-project/opt-out-v2); we
+re-filter on each upstream patch release.
 
 ## Known limitations
 
